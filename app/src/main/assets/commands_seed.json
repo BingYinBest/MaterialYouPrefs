@@ -1,0 +1,17 @@
+/* PLACEHOLDER — the real JSON seed was blocked by MCP gateway's JSON re-parse
+ * (any content starting with '{' is auto-parsed as object). This file is a stub
+ * so the repo layout matches the code that reads `assets/commands_seed.json`.
+ *
+ * Real payload lives at local git blob: commands_seed.json on branch feat/avbtool
+ * in the local repo (/root/MaterialYouPrefs) at commit 79903e5.
+ * File is 9795 bytes / 17 avbtool subcommands / aospHead=386fb904.
+ *
+ * Restore strategy for M2.5:
+ *   1. User `git push --force-with-lease` from local, OR
+ *   2. User opens https://github.com/BingYinBest/MaterialYouPrefs and pastes the
+ *      content from the local repo (see dev-log/TODO.md T-M2.5-seed).
+ *
+ * This stub is NOT valid JSON — do not attempt JSON.parse on it.
+ * AvbToolRunnerImpl must fall back to builtin CommandSeedModels.builtinCommands()
+ * when assets/commands_seed.json is missing or non-JSON (see ADR-013).
+ */
