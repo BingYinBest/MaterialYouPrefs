@@ -12,6 +12,13 @@ import kotlinx.coroutines.flow.Flow
  *
  * Note: `group` is a SQLite reserved word; the column is quoted with
  * backticks in every SQL string below.
+ *
+ * Return types:
+ * - @Query methods return whatever the SQL projects (Int, entity, Flow<...>).
+ * - @Insert/@Update methods return Unit (Kotlin's implicit void). Room 2.6.1
+ *   rejects `suspend fun upsertAll(List<Entity>): Int` with
+ *   'Not sure how to handle insert method's return type'; the caller can
+ *   count locally from its input list.
  */
 @Dao
 interface CommandDao {
@@ -37,7 +44,7 @@ interface CommandDao {
     suspend fun count(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAll(commands: List<CommandEntity>): Int
+    suspend fun upsertAll(commands: List<CommandEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(command: CommandEntity)
