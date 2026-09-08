@@ -51,14 +51,16 @@ android {
 }
 
 // M3.1: Chaquopy runtime.
-// - Python 3.12 (default in Chaquopy 15.0.1)
-// - abiFilters must match the `android.defaultConfig.ndk` filter above
-// - sourceDirs picks up `src/main/python/*.py` for embedding
+// DSL reference: https://github.com/chaquo/chaquopy/blob/15.0.1/product/gradle-plugin/src/main/kotlin/PythonDsl.kt
+// - `defaultConfig { }` holds version + pip + staticProxy + extractPackages
+// - `sourceSets { main { srcDir(...) } }` controls Python source directories.
+//   The plugin auto-creates `src/main/python/` so no explicit srcDir is needed
+//   for our M3.1 layout.
+// - `abiFilters` is NOT part of Chaquopy DSL; it comes from `android.defaultConfig.ndk`.
 chaquopy {
-    defaultVersion("3.12")
-    version("3.12")
-    abiFilters("arm64-v8a")
-    sourceDirs = setOf("src/main/python")
+    defaultConfig {
+        version = "3.12"
+    }
 }
 
 dependencies {
@@ -87,9 +89,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.javax.inject)
 
-    // M3: Chaquopy + cryptography (M3.1 baseline; avbtool.py itself lands in M3.2)
+    // M3: Chaquopy runtime. Python libraries (cryptography, pycryptodome,
+    // etc.) are installed via `chaquopy.defaultConfig.pip.install(...)` in
+    // M3.2+ once we start vendoring avbtool.py.
     implementation(libs.chaquopy.python)
-    implementation(libs.chaquopy.cryptography)
 
     // Tests
     testImplementation(libs.junit)
