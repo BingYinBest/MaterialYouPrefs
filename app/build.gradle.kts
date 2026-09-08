@@ -51,12 +51,18 @@ android {
 }
 
 // M3.1: Chaquopy runtime.
-// DSL reference: https://github.com/chaquo/chaquopy/blob/15.0.1/product/gradle-plugin/src/main/kotlin/PythonDsl.kt
-// - `defaultConfig { }` holds version + pip + staticProxy + extractPackages
-// - `sourceSets { main { srcDir(...) } }` controls Python source directories.
-//   The plugin auto-creates `src/main/python/` so no explicit srcDir is needed
-//   for our M3.1 layout.
-// - `abiFilters` is NOT part of Chaquopy DSL; it comes from `android.defaultConfig.ndk`.
+//
+// Reference: https://github.com/chaquo/chaquopy/blob/15.0.1/product/gradle-plugin/src/main/kotlin/PythonDsl.kt
+//
+// - `defaultConfig { version = ... }` selects Python version.
+// - `pip { install(...) }` installs Python packages from https://chaquo.com/pypi-13.1/.
+//   These are NOT Gradle dependencies; do not add them to `implementation(...)`.
+// - `sourceSets.main` auto-creates `src/main/python/` -- no explicit srcDir needed.
+// - `abiFilters` comes from `android.defaultConfig.ndk`, not from Chaquopy DSL.
+// - Do NOT add `implementation("com.chaquo.python:python:...")` -- the Chaquopy
+//   plugin wires the Python runtime + `com.chaquo.python.runtime` AAR
+//   automatically. Adding it manually triggers 'Unresolved reference: python'
+//   because no such dep alias exists in libs.versions.toml.
 chaquopy {
     defaultConfig {
         version = "3.12"
@@ -89,10 +95,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.javax.inject)
 
-    // M3: Chaquopy runtime. Python libraries (cryptography, pycryptodome,
-    // etc.) are installed via `chaquopy.defaultConfig.pip.install(...)` in
-    // M3.2+ once we start vendoring avbtool.py.
-    implementation(libs.chaquopy.python)
+    // M3: Chaquopy plugin auto-injects the Python runtime; no `implementation` line
+    // needed here. Python libraries (cryptography, etc.) are installed via
+    // `chaquopy.defaultConfig.pip.install(...)` in M3.2+ once we vendor avbtool.py.
 
     // Tests
     testImplementation(libs.junit)
