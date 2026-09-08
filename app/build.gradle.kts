@@ -7,9 +7,30 @@ plugins {
     alias(libs.plugins.chaquopy)
 }
 
+// M3.3+: fixed dev signing config. The keystore is committed at
+// `keystores/dev.keystore`. Every CI build signs with the same key, so
+// users can install-over-upgrade without uninstalling first.
+//
+// NOTE: keystore passwords are hardcoded because this is a *debug/dev*
+// keystore that only ever appears in a public repo. Never use this pattern
+// for release builds — put release keystore in CI Secrets instead.
+val devKeystoreFile: File = rootProject.file("keystores/dev.keystore")
+val devKeystoreStorePass: String = "avbtool-dev-store"
+val devKeystoreAlias: String = "avbtool-dev"
+val devKeystoreKeyPass: String = "avbtool-dev-store"
+
 android {
     namespace = "com.bingyin.materialyouprefs"
     compileSdk = 35
+
+    signingConfigs {
+        create("devFixed") {
+            storeFile = devKeystoreFile
+            storePassword = devKeystoreStorePass
+            keyAlias = devKeystoreAlias
+            keyPassword = devKeystoreKeyPass
+        }
+    }
 
     defaultConfig {
         applicationId = "com.bingyin.materialyouprefs"
@@ -24,12 +45,20 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Use the fixed dev keystore so every CI build has the same
+            // signature (no need to uninstall before re-install).
+            signingConfig = signingConfigs.getByName("devFixed")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Release also uses the dev keystore for now. Replace with a
+            // CI-Secret-backed release keystore before shipping.
+            signingConfig = signingConfigs.getByName("devFixed")
         }
     }
 
@@ -64,16 +93,16 @@ android {
 //   automatically. Adding it manually triggers 'Unresolved reference: python'
 //   because no such dep alias exists in libs.versions.toml.
 //
-// M3.3: `cryptography` replaces the `openssl` subprocess calls that vendored
-// avbtool.py shelled out to. Pin to a version whose arm64-v8a wheel is available
-// at https://chaquo.com/pypi-13.1/. See `patches/avbtool-android.patch` for
-// the exact substitutions.
+// M3.3: `pip { install("cryptography==43.0.1") }` was REVERTED because
+// pypi-13.1 does not host an arm64-v8a wheel for `cryptography` at all
+// (verified via curl to https://chaquo.com/pypi-13.1/simple/cryptography/ --
+// HTTP 404). pip falls back to PyPI sdist, which uses `maturin` (Rust toolchain)
+// to build, and the GitHub runner doesn't have maturin installed. See
+// `dev-log/DEVLOG.md` M3.3 entry for full trace. Next M3.3 iteration will
+// switch avbtool.py to pure-Python RSA (pow(a,d,n)) so no external dep needed.
 chaquopy {
     defaultConfig {
         version = "3.12"
-        pip {
-            install("cryptography==43.0.1")
-        }
     }
 }
 
@@ -104,8 +133,8 @@ dependencies {
     implementation(libs.javax.inject)
 
     // M3: Chaquopy plugin auto-injects the Python runtime; no `implementation` line
-    // needed here. Python libraries (cryptography, etc.) are installed via
-    // `chaquopy.defaultConfig.pip.install(...)` above.
+    // needed here. Python libraries, when added later, go via `pip { install(...) }`
+    // in the chaquopy block above.
 
     // Tests
     testImplementation(libs.junit)
