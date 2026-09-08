@@ -53,12 +53,6 @@ android {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
-    }
-}
-
 // M3 才真正需要 Chaquopy（要拷贝 avbtool.py + 依赖）；M1/M2 阶段先禁用 chaquopy 块，
 // 避免空 sourceDirs 触发 plugin 报错。toml 里的 plugin/dep 定义保留，M3 只需解开注释。
 //
