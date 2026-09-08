@@ -23,7 +23,7 @@ data class CommandParam(
 )
 
 @Serializable
-denum class ParamType {
+enum class ParamType {
     STRING,
     PATH,
     FILE,
