@@ -74,6 +74,11 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    // material-icons-extended is required because PrefData uses icons outside
+    // the small Icons.Filled/Outlined set that ships with material3
+    // (Wifi, Bluetooth, Storage, Apps, CameraAlt, Security, Accessibility,
+    // Language, Palette, DarkMode, FormatSize, BugReport, Analytics, ...).
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     debugImplementation(libs.androidx.ui.tooling)
