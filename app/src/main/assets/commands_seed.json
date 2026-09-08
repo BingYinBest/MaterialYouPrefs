@@ -1,22 +1,242 @@
-# PLACEHOLDER — this file is intentionally NOT valid JSON.
-#
-# The real payload (9795 bytes / 17 avbtool subcommands / aospHead=386fb904)
-# could not be pushed via the MCP gateway: the gateway re-parses any content
-# starting with '{' as a JSON object, so a valid JSON seed string always
-# fails with `Expected string, received object`.
-#
-# Real blob: local git commit 79903e5 on branch feat/avbtool in
-# /root/MaterialYouPrefs (authoritative source).
-#
-# Restore strategy — pick one:
-#   1. User runs locally:
-#        cd /root/MaterialYouPrefs
-#        git checkout feat/avbtool
-#        git push --force-with-lease origin feat/avbtool
-#   2. User opens https://github.com/BingYinBest/MaterialYouPrefs
-#      and pastes content from dev-log/TODO.md task T-M2.5-seed.
-#
-# AvbToolRunnerImpl / CommandRepository MUST handle this case:
-#   - if assets/commands_seed.json starts with '#' or fails JSON.parse,
-#     log a warning and fall back to builtin CommandSeedModels.builtinCommands()
-#   (see ADR-013 + Task T-M2.5-seed in dev-log/TODO.md)
+{
+  "version": 1,
+  "aospHead": "386fb90492db3bd6bc484a579bcde5b43a2a0292",
+  "commands": [
+    {
+      "name": "version",
+      "title": "版本信息",
+      "summary": "Prints version of avbtool.",
+      "group": "ABOUT",
+      "icon": "info",
+      "tab": "settings",
+      "sortOrder": 900,
+      "params": []
+    },
+    {
+      "name": "extract_public_key",
+      "title": "提取公钥",
+      "summary": "Extract public key from a signing key.",
+      "group": "KEY",
+      "icon": "key",
+      "tab": "home",
+      "sortOrder": 10,
+      "params": [
+        { "name": "--key", "type": "PATH", "required": true, "description": "输入密钥文件" },
+        { "name": "--output_key", "type": "PATH", "required": true, "description": "输出公钥文件" }
+      ]
+    },
+    {
+      "name": "make_vbmeta_image",
+      "title": "创建 vbmeta 镜像",
+      "summary": "Makes a vbmeta image with descriptors.",
+      "group": "VBMETA",
+      "icon": "vbmeta",
+      "tab": "home",
+      "sortOrder": 20,
+      "params": [
+        { "name": "--partition_name", "type": "STRING", "required": false, "description": "分区名（默认 vbmeta）" },
+        { "name": "--partition_size", "type": "INT", "required": false, "description": "分区大小" },
+        { "name": "--key", "type": "PATH", "required": false, "description": "签名密钥" },
+        { "name": "--prop", "type": "STRING", "required": false, "description": "属性键值对，可重复" },
+        { "name": "--flags", "type": "INT", "required": false, "description": "vbmeta flags 位图" },
+        { "name": "--hash_algorithm", "type": "CHOICE", "required": false, "description": "哈希算法，如 sha256" },
+        { "name": "--include_descriptors_from_image", "type": "PATH", "required": false, "description": "从已有镜像拷贝描述符" },
+        { "name": "--out", "type": "PATH", "required": true, "description": "输出 vbmeta 镜像" }
+      ]
+    },
+    {
+      "name": "add_hash_footer",
+      "title": "添加哈希页脚",
+      "summary": "Add hashes and footer to image.",
+      "group": "HASHTREE",
+      "icon": "hashtree",
+      "tab": "home",
+      "sortOrder": 30,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像文件" },
+        { "name": "--hash_algorithm", "type": "CHOICE", "required": true, "description": "sha256 / sha512" },
+        { "name": "--salt", "type": "STRING", "required": false, "description": "可选 salt" },
+        { "name": "--partition_name", "type": "STRING", "required": false, "description": "分区名" },
+        { "name": "--block_size", "type": "INT", "required": false, "description": "块大小，默认 4096" },
+        { "name": "--rollback_index_location", "type": "INT", "required": false, "description": "回滚索引在 header 中位置" }
+      ]
+    },
+    {
+      "name": "append_vbmeta_image",
+      "title": "追加 vbmeta 到镜像",
+      "summary": "Append vbmeta image to image.",
+      "group": "VBMETA",
+      "icon": "vbmeta",
+      "tab": "home",
+      "sortOrder": 40,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" },
+        { "name": "--hash_algorithm", "type": "CHOICE", "required": true, "description": "哈希算法" },
+        { "name": "--vbmeta_image", "type": "PATH", "required": true, "description": "要追加的 vbmeta 镜像" },
+        { "name": "--offset", "type": "INT", "required": false, "description": "追加偏移" },
+        { "name": "--key", "type": "PATH", "required": false, "description": "签名密钥" },
+        { "name": "--prop", "type": "STRING", "required": false, "description": "属性键值对" }
+      ]
+    },
+    {
+      "name": "add_hashtree_footer",
+      "title": "添加 hashtree 页脚",
+      "summary": "Add a hashtree descriptor to vbmeta, then append and sign.",
+      "group": "HASHTREE",
+      "icon": "hashtree",
+      "tab": "home",
+      "sortOrder": 50,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" },
+        { "name": "--vbmeta_image", "type": "PATH", "required": false, "description": "要合并的 vbmeta 镜像" },
+        { "name": "--partition_name", "type": "STRING", "required": false, "description": "分区名" },
+        { "name": "--hash_algorithm", "type": "CHOICE", "required": true, "description": "sha256 / sha512" },
+        { "name": "--salt", "type": "STRING", "required": false, "description": "salt" },
+        { "name": "--fec_num_roots", "type": "INT", "required": false, "description": "FEC 根数" },
+        { "name": "--key", "type": "PATH", "required": false, "description": "签名密钥" }
+      ]
+    },
+    {
+      "name": "erase_footer",
+      "title": "擦除页脚",
+      "summary": "Erase footer from an image.",
+      "group": "HASHTREE",
+      "icon": "delete",
+      "tab": "feature",
+      "sortOrder": 100,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" }
+      ]
+    },
+    {
+      "name": "zero_hashtree",
+      "title": "清零 hashtree 与 FEC",
+      "summary": "Zero out hashtree and FEC data.",
+      "group": "HASHTREE",
+      "icon": "zero",
+      "tab": "feature",
+      "sortOrder": 110,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" }
+      ]
+    },
+    {
+      "name": "resize_image",
+      "title": "调整镜像大小",
+      "summary": "Resize image with a footer.",
+      "group": "HASHTREE",
+      "icon": "resize",
+      "tab": "feature",
+      "sortOrder": 120,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" },
+        { "name": "--new_size", "type": "INT", "required": true, "description": "新尺寸（字节）" }
+      ]
+    },
+    {
+      "name": "extract_vbmeta_image",
+      "title": "抽取 vbmeta 镜像",
+      "summary": "Extract a vbmeta image from a signed image.",
+      "group": "VBMETA",
+      "icon": "extract",
+      "tab": "feature",
+      "sortOrder": 130,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "源镜像" },
+        { "name": "--out", "type": "PATH", "required": true, "description": "输出 vbmeta 镜像" },
+        { "name": "--key", "type": "PATH", "required": false, "description": "可选校验密钥" }
+      ]
+    },
+    {
+      "name": "info_image",
+      "title": "读取镜像元数据",
+      "summary": "Print info about an image with a footer.",
+      "group": "META",
+      "icon": "info",
+      "tab": "feature",
+      "sortOrder": 140,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "源镜像" },
+        { "name": "--key", "type": "PATH", "required": false, "description": "用于校验签名的公钥" }
+      ]
+    },
+    {
+      "name": "verify_image",
+      "title": "验证镜像完整性",
+      "summary": "Verify integrity of an image with a footer.",
+      "group": "VERIFY",
+      "icon": "verify",
+      "tab": "feature",
+      "sortOrder": 150,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" },
+        { "name": "--key", "type": "PATH", "required": false, "description": "用于校验签名的公钥" }
+      ]
+    },
+    {
+      "name": "print_partition_digests",
+      "title": "打印分区摘要",
+      "summary": "Print the digests for each descriptor.",
+      "group": "META",
+      "icon": "sha",
+      "tab": "feature",
+      "sortOrder": 160,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" }
+      ]
+    },
+    {
+      "name": "calculate_vbmeta_digest",
+      "title": "计算 vbmeta 摘要",
+      "summary": "Calculate digest of a vbmeta image.",
+      "group": "ALGO",
+      "icon": "sha",
+      "tab": "feature",
+      "sortOrder": 170,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "vbmeta 镜像" }
+      ]
+    },
+    {
+      "name": "calculate_kernel_cmdline",
+      "title": "计算 kernel cmdline 哈希",
+      "summary": "Compute the hash of a kernel command line for the cmdLINEdescriptor.",
+      "group": "ALGO",
+      "icon": "sha",
+      "tab": "feature",
+      "sortOrder": 180,
+      "params": [
+        { "name": "cmdline", "type": "STRING", "required": true, "description": "kernel cmdline 字符串" }
+      ]
+    },
+    {
+      "name": "set_ab_metadata",
+      "title": "设置 A/B 元数据",
+      "summary": "Set A/B metadata.",
+      "group": "META",
+      "icon": "ab",
+      "tab": "feature",
+      "sortOrder": 190,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "目标镜像" },
+        { "name": "--ab_suffix", "type": "STRING", "required": true, "description": "A/B 后缀（a / b）" },
+        { "name": "--ab_index", "type": "INT", "required": true, "description": "A/B 索引" }
+      ]
+    },
+    {
+      "name": "generate_test_image",
+      "title": "生成测试镜像",
+      "summary": "Generate a test image with a hashtree footer for smoke testing.",
+      "group": "CONFIG",
+      "icon": "test",
+      "tab": "settings",
+      "sortOrder": 800,
+      "params": [
+        { "name": "--image", "type": "PATH", "required": true, "description": "输出测试镜像" },
+        { "name": "--image_size", "type": "INT", "required": false, "description": "镜像大小" },
+        { "name": "--block_size", "type": "INT", "required": false, "description": "块大小" },
+        { "name": "--fec_num_roots", "type": "INT", "required": false, "description": "FEC 根数" }
+      ]
+    }
+  ]
+}
