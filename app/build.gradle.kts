@@ -18,6 +18,12 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Restrict to arm64-v8a only (ADR-004). Note: `ndk { abiFilters }` is a
+        // child of `defaultConfig`, not of `android`. Moving it out was a CI compile
+        // failure (Unresolved reference: ndk at build.gradle.kts:49).
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -44,10 +50,6 @@ android {
         resources.excludes += "META-INF/INDEX.LIST"
         resources.excludes += "META-INF/io.netty.versions.properties"
         resources.excludes += "META-INF/AL2.0/LICENSE"
-    }
-
-    ndk {
-        abiFilters += listOf("arm64-v8a")
     }
 }
 
@@ -78,21 +80,30 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     debugImplementation(libs.androidx.ui.tooling)
 
-    // --- avbtool additions (M1) ---
-    // M3: implementation(libs.chaquopy)
-
+    // M1: Room (M2 data layer)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // M1: coroutines (CommandRepository Flow APIs)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.coroutines.core)
+
+    // M1: JSON serialization (seed JSON + paramsJson)
     implementation(libs.kotlinx.serialization.json)
 
-    // JSR-330 annotations used by CommandRepository (@Inject, @Singleton).
+    // M1: @Inject / @Singleton annotations (no DI framework yet, see ADR-010)
     implementation(libs.javax.inject)
+
+    // M3: Chaquopy + cryptography (commented out to avoid empty sourceDirs error)
+    // implementation(libs.chaquopy.python)
+    // implementation(libs.chaquopy.cryptography)
+    // implementation(libs.chaquopy.pyyaml)
+
+    // Tests (added when DAO tests land in M2.5)
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
