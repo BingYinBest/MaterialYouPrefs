@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
+        android:name=".MaterialYouPrefsApplication"
         android:allowBackup="true"
         android:icon="@android:drawable/ic_dialog_info"
         android:label="MaterialYou Prefs"
