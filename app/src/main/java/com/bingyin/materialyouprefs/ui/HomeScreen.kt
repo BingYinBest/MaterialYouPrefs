@@ -1,61 +1,14 @@
-package com.bingyin.materialyouprefs.ui.screens
+package com.bingyin.materialyouprefs.ui
 
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.bingyin.materialyouprefs.AppState
-import com.bingyin.materialyouprefs.ui.components.PreferenceGroupSection
-import com.bingyin.materialyouprefs.ui.viewmodel.HomeViewModel
-
-/**
- * Home tab. M2.5 rewire: reads commands from Room via
- * [HomeViewModel] instead of the static [PrefData.homeGroups].
- *
- * The view model is bound to the `androidx.lifecycle.ViewModel` contract
- * but constructed in-place because we have no ViewModelStoreOwner
- * (Compose-only activity without the `ViewModelProvider` wiring). The
- * VM holds no state itself, so re-creation on config change is cheap.
- */
-@Composable
-fun HomeScreen(
-    onItemClicked: (String) -> Unit,
-    contentPadding: PaddingValues,
-) {
-    val viewModel = remember { HomeViewModel(AppState.homeRepository) }
-    val groups by viewModel.groups.collectAsStateWithLifecycle()
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding),
-        contentPadding = PaddingValues(bottom = 16.dp),
-    ) {
-        if (groups.isEmpty()) {
-            item {
-                Text(
-                    text = "加载中…（seed 尚未完成）",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(16.dp),
-                )
-            }
-        }
-        items(groups) { group ->
-            PreferenceGroupSection(
-                group = group,
-                onItemClicked = onItemClicked,
-            )
-        }
-    }
-}
+// This file used to contain a M2.5-draft `HomeScreen` composable that
+// referenced `AppState.homeRepository` (a field we never added).
+// The correct implementation lives in `ui/screens/HomeScreen.kt`.
+//
+// We keep the file with only the package declaration so git still tracks
+// this path but there is no `HomeScreen` overload from this package.
+// Without this cleanup the compiler reports:
+//   e: ui/HomeScreen.kt:31 Conflicting overloads: fun HomeScreen(...): Unit
+//   e: ui/screens/HomeScreen.kt:32 Conflicting overloads
+//   e: ui/MaterialYouPrefsApp.kt:89 Cannot infer type for this parameter
+//     (itemId parameter — compiler couldn't decide which HomeScreen
+//      overload it was binding against).
