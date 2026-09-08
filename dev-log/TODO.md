@@ -34,7 +34,16 @@
 - [ ] Application.onCreate 触发 seedFromAssets
 - [ ] CommandRepository 单测 + AvbHelpParser 单测
 - [ ] ViewModel：HomeViewModel / FeatureViewModel / SettingsViewModel / DetailViewModel
-- [ ] T-M2.5-seed: 恢复 assets/commands_seed.json 为真实 JSON（当前为注释占位符，因 MCP 网关拒绝 JSON 对象体）
+
+### 推送阻断任务（T-M2.5-seed）
+- [ ] **T-M2.5-seed**：把本地磁盘上真实的 `app/src/main/assets/commands_seed.json`（9795B，17 条 avbtool 子命令，aospHead=386fb904，本地 commit `79903e5`）覆盖到远端 `feat/avbtool`。
+  - **背景**：MCP `push_files` 网关会把 `files[].content` 中以 `{` 开头的字符串自动 parse 为 JSON object，任何合法 JSON 内容都推送失败（已验证 `[{"a":1}]` 也失败；YAML 注释占位符已成功推送）。
+  - **当前状态**：远端 `commands_seed.json` 是 YAML 注释占位符（`d6c808f`）。
+  - **恢复方案（任一）**：
+    1. 用户本地 `cd /root/MaterialYouPrefs && git checkout feat/avbtool && git push --force-with-lease origin feat/avbtool`
+    2. 用户在 GitHub Web UI：打开 https://github.com/BingYinBest/MaterialYouPrefs/blob/feat/avbtool/app/src/main/assets/commands_seed.json → Edit → 粘贴本地文件内容 → commit
+    3. M2.5 加 `CommandRepository.seedFromAssets` fallback：文件首字符为 `#` 时改用 `CommandSeedModels.builtinCommands()`
+  - **优先级**：M2.5 阻塞；CI 编译不受影响（占位符不参与编译）。
 
 ## M3 avbtool 集成（暂缓，等 M1/M2 CI 绿）
 - [ ] 复制 avbtool.py + 打 patch（15+ 处 subprocess/openssl 改写）
