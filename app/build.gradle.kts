@@ -63,9 +63,17 @@ android {
 //   plugin wires the Python runtime + `com.chaquo.python.runtime` AAR
 //   automatically. Adding it manually triggers 'Unresolved reference: python'
 //   because no such dep alias exists in libs.versions.toml.
+//
+// M3.3: `cryptography` replaces the `openssl` subprocess calls that vendored
+// avbtool.py shelled out to. Pin to a version whose arm64-v8a wheel is available
+// at https://chaquo.com/pypi-13.1/. See `patches/avbtool-android.patch` for
+// the exact substitutions.
 chaquopy {
     defaultConfig {
         version = "3.12"
+        pip {
+            install("cryptography==43.0.1")
+        }
     }
 }
 
@@ -97,7 +105,7 @@ dependencies {
 
     // M3: Chaquopy plugin auto-injects the Python runtime; no `implementation` line
     // needed here. Python libraries (cryptography, etc.) are installed via
-    // `chaquopy.defaultConfig.pip.install(...)` in M3.2+ once we vendor avbtool.py.
+    // `chaquopy.defaultConfig.pip.install(...)` above.
 
     // Tests
     testImplementation(libs.junit)
