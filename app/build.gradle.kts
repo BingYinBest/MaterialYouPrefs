@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.chaquopy)
+    // M3: alias(libs.plugins.chaquopy)
 }
 
 android {
@@ -64,7 +64,6 @@ kotlin {
 //     defaultVersion("3.12")
 //     version("3.12")
 //     abiFilters("arm64-v8a")
-//     // pip(pipfile = "src/main/python/requirements.txt")
 //     sourceDirs = setOf("src/main/python")
 // }
 
@@ -84,7 +83,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     // --- avbtool additions (M1) ---
-    implementation(libs.chaquopy)
+    // M3: implementation(libs.chaquopy)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
