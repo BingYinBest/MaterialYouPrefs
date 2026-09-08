@@ -8,6 +8,7 @@ import com.bingyin.materialyouprefs.data.model.CommandDefinition
 import com.bingyin.materialyouprefs.ui.iconKeyToIcon
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -40,7 +41,7 @@ class HomeViewModel(repository: CommandRepository) : ViewModel() {
         .map { commands -> groupByTab(commands) }
         .stateIn(
             scope = vmScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
+            started = SharingStarted WhileSubscribed(5_000L),
             initialValue = emptyList(),
         )
 
