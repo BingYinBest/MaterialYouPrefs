@@ -1,17 +1,22 @@
-/* PLACEHOLDER — the real JSON seed was blocked by MCP gateway's JSON re-parse
- * (any content starting with '{' is auto-parsed as object). This file is a stub
- * so the repo layout matches the code that reads `assets/commands_seed.json`.
- *
- * Real payload lives at local git blob: commands_seed.json on branch feat/avbtool
- * in the local repo (/root/MaterialYouPrefs) at commit 79903e5.
- * File is 9795 bytes / 17 avbtool subcommands / aospHead=386fb904.
- *
- * Restore strategy for M2.5:
- *   1. User `git push --force-with-lease` from local, OR
- *   2. User opens https://github.com/BingYinBest/MaterialYouPrefs and pastes the
- *      content from the local repo (see dev-log/TODO.md T-M2.5-seed).
- *
- * This stub is NOT valid JSON — do not attempt JSON.parse on it.
- * AvbToolRunnerImpl must fall back to builtin CommandSeedModels.builtinCommands()
- * when assets/commands_seed.json is missing or non-JSON (see ADR-013).
- */
+# PLACEHOLDER — this file is intentionally NOT valid JSON.
+#
+# The real payload (9795 bytes / 17 avbtool subcommands / aospHead=386fb904)
+# could not be pushed via the MCP gateway: the gateway re-parses any content
+# starting with '{' as a JSON object, so a valid JSON seed string always
+# fails with `Expected string, received object`.
+#
+# Real blob: local git commit 79903e5 on branch feat/avbtool in
+# /root/MaterialYouPrefs (authoritative source).
+#
+# Restore strategy — pick one:
+#   1. User runs locally:
+#        cd /root/MaterialYouPrefs
+#        git checkout feat/avbtool
+#        git push --force-with-lease origin feat/avbtool
+#   2. User opens https://github.com/BingYinBest/MaterialYouPrefs
+#      and pastes content from dev-log/TODO.md task T-M2.5-seed.
+#
+# AvbToolRunnerImpl / CommandRepository MUST handle this case:
+#   - if assets/commands_seed.json starts with '#' or fails JSON.parse,
+#     log a warning and fall back to builtin CommandSeedModels.builtinCommands()
+#   (see ADR-013 + Task T-M2.5-seed in dev-log/TODO.md)
