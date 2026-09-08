@@ -39,6 +39,10 @@ class CommandRepository @Inject constructor(
         it.map { e -> e.toModel() }
     }
 
+    /** Observe all commands in a given UI tab ("home" / "feature" / "settings"). */
+    fun observeByTab(tab: String): Flow<List<CommandDefinition>> =
+        dao.observeByTab(tab).map { it.map { e -> e.toModel() } }
+
     fun observeByGroup(group: String): Flow<List<CommandDefinition>> =
         dao.observeByGroup(group).map { it.map { e -> e.toModel() } }
 
@@ -83,6 +87,7 @@ class CommandRepository @Inject constructor(
             isBuiltin = false,
             fetchedAt = 0L,
             aospVersion = avbRunner.aospHead(),
+            tab = "feature",
         )).copy(
             paramsJson = refreshedParams?.let { json.encodeToString(it) } ?: existing?.paramsJson ?: "[]",
             fetchedAt = System.currentTimeMillis(),
@@ -115,6 +120,7 @@ class CommandRepository @Inject constructor(
             isBuiltin = true,
             fetchedAt = 0L,
             aospVersion = aospHead,
+            tab = tab,
         )
     }
 

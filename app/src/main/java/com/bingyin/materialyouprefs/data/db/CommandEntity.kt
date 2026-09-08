@@ -9,6 +9,11 @@ import com.bingyin.materialyouprefs.data.model.CommandDefinition
  *
  * Mirrors [CommandDefinition] but flattens nested JSON into String columns so
  * Room can store it without a converter. Convert at repository boundary.
+ *
+ * The `tab` column routes commands into UI surfaces:
+ *   - "home"     — legacy home tab (M2.x), now unused by the new Home design
+ *   - "feature"  — Feature tab, grouped by `group` field
+ *   - "settings" — reserved for future diagnostics
  */
 @Entity(tableName = "commands")
 data class CommandEntity(
@@ -23,6 +28,7 @@ data class CommandEntity(
     val isBuiltin: Boolean,
     val fetchedAt: Long,
     val aospVersion: String,
+    val tab: String = "home",
 ) {
     fun toModel(): CommandDefinition = CommandDefinition(
         id = id,
@@ -36,6 +42,7 @@ data class CommandEntity(
         isBuiltin = isBuiltin,
         fetchedAt = fetchedAt,
         aospVersion = aospVersion,
+        tab = tab,
     )
 
     companion object {
@@ -51,6 +58,7 @@ data class CommandEntity(
             isBuiltin = d.isBuiltin,
             fetchedAt = d.fetchedAt,
             aospVersion = d.aospVersion,
+            tab = d.tab,
         )
     }
 }

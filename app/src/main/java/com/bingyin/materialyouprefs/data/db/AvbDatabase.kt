@@ -8,12 +8,19 @@ import androidx.room.RoomDatabase
 /**
  * Room database for avbtool commands and their execution history.
  *
- * Schema version 1 is the initial M2 schema. Bump [version] and add
- * a [Migration] whenever a column/table changes.
+ * Version history:
+ *   - v1 (M2): initial schema — commands, execution_history
+ *   - v2 (M2.6+): added `commands.tab` column so Home/Feature/Settings can filter
+ *     commands by tab. This is a dev-phase change; we let Room fall back to a
+ *     destructive migration (drop + recreate) rather than hand-writing a
+ *     Migration object. `seedFromAssets` repopulates on next launch.
+ *
+ * Once we ship v1.0 to users we will switch to explicit migrations and use
+ * the Room SchemaExporter to publish them.
  */
 @Database(
     entities = [CommandEntity::class, ExecutionEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AvbDatabase : RoomDatabase() {
@@ -33,6 +40,7 @@ abstract class AvbDatabase : RoomDatabase() {
 
         private fun build(context: Context) =
             Room.databaseBuilder(context, AvbDatabase::class.java, DB_NAME)
+                .fallbackToDestructiveMigration()
                 .build()
 
         /** Test hook. */

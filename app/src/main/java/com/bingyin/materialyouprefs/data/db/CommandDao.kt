@@ -10,8 +10,9 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Data access for [CommandEntity].
  *
- * Note: `group` is a SQLite reserved word; the column is quoted with
- * backticks in every SQL string below.
+ * Note: `group` and `tab` are quoted with backticks where needed.
+ * `group` is a SQLite reserved word; `tab` is not, but we keep the style
+ * consistent for readability.
  *
  * Return types:
  * - @Query methods return whatever the SQL projects (Int, entity, Flow<...>).
@@ -26,6 +27,10 @@ interface CommandDao {
     /** All commands, most-recently-fetched first. */
     @Query("SELECT * FROM commands ORDER BY fetchedAt DESC")
     fun observeAll(): Flow<List<CommandEntity>>
+
+    /** Commands in a single UI tab, alphabetically by title. */
+    @Query("SELECT * FROM commands WHERE tab = :tab ORDER BY title ASC")
+    fun observeByTab(tab: String): Flow<List<CommandEntity>>
 
     /** Commands in a single UI group, alphabetically by title. */
     @Query("SELECT * FROM commands WHERE `group` = :group ORDER BY title ASC")

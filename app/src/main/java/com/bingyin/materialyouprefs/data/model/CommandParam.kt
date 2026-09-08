@@ -46,6 +46,10 @@ enum class ParamType {
  * @property isBuiltin   true if definition came from seed JSON, false if fetched from --help
  * @property fetchedAt   timestamp of last --help fetch (ms), used for 24h cache policy
  * @property aospVersion AOSP commit / release this definition targets
+ * @property tab         which UI tab this command belongs to ("home" / "feature" / "settings").
+ *                       The seed JSON already carries this field; older installations
+ *                       get the schema v2 default of "home" via
+ *                       [androidx.room.RoomDatabase.Builder.fallbackToDestructiveMigration].
  */
 data class CommandDefinition(
     val id: String,
@@ -59,4 +63,5 @@ data class CommandDefinition(
     val isBuiltin: Boolean = true,
     val fetchedAt: Long = 0L,
     val aospVersion: String = "",
+    val tab: String = "home",
 )
