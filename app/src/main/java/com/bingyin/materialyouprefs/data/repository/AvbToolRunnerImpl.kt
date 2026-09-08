@@ -8,7 +8,7 @@ import com.bingyin.materialyouprefs.data.model.AvbExecutionResult
 import com.bingyin.materialyouprefs.data.model.CommandParam
 import com.bingyin.materialyouprefs.data.model.ErrorCode
 import com.chaquo.python.PyException
-import com.chaquo.python.PyModule
+import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,8 +28,8 @@ import javax.inject.Singleton
  *
  * Wire-up:
  *   1. Constructor receives a [Context] to bootstrap the Python runtime.
- *   2. First call to any method triggers Python.init on an Executor thread
- *      (Chaquopy forbids calling Python.init on the main thread).
+ *   2. First call to any method triggers Python startup on an Executor thread
+ *      (Chaquopy forbids starting Python on the main thread).
  *   3. `run(request)` serializes [AvbExecutionRequest] to JSON, invokes
  *      `python_main.run(json)` on the executor, parses the JSON result back
  *      into [AvbExecutionResult].
@@ -42,6 +42,12 @@ import javax.inject.Singleton
  * M3.1 scope: only `version` is dispatched on the Python side. All other
  * commands return an UNKNOWN_PARAM failure so the UI has a clean path.
  * M3.2 vendors the real avbtool.py.
+ *
+ * Chaquopy 15 API notes:
+ *   - There is no `PyModule` class. Use `PyObject` from `py.getModule(name)`.
+ *   - There is no `Python.useInstance` / `py.importModule`.
+ *   - `PyObject.toString()` returns the Python `str()` of the underlying value.
+ *   - `PyException` has no `.value` field — use `.message` (which includes trace).
  */
 @Singleton
 class AvbToolRunnerImpl @Inject constructor(
@@ -52,7 +58,7 @@ class AvbToolRunnerImpl @Inject constructor(
     private val executor = Executors.newSingleThreadExecutor {
         r -> Thread(r, "avbtool-python").apply { isDaemon = true }
     }
-    private var pyModule: PyModule? = null
+    @Volatile private var pyModule: PyObject? = null
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     override suspend fun run(request: AvbExecutionRequest): AvbExecutionResult =
@@ -65,7 +71,7 @@ class AvbToolRunnerImpl @Inject constructor(
             } catch (e: PyException) {
                 AvbExecutionResult.Failure(
                     errorCode = ErrorCode.PYTHON_EXCEPTION,
-                    message = "Python error: ${e.value}",
+                    message = "Python error: ${e.message}",
                     cause = e,
                 )
             } catch (t: Throwable) {
@@ -125,12 +131,14 @@ class AvbToolRunnerImpl @Inject constructor(
 
     // ---------- internal helpers ----------
 
+    /**
+     * Must be called on the executor thread. Python.start() (implicitly via
+     * `Python.getInstance()`) cannot be called from the main thread.
+     */
     private fun ensureInitialized() {
         if (pyModule != null) return
         val py = Python.getInstance()
-        Python.useInstance(py)
-        py.getPlatform().useAsCurrent()
-        pyModule = py.importModule("python_main")
+        pyModule = py.getModule("python_main")
     }
 
     private fun encodeArgsJson(request: AvbExecutionRequest): String {
@@ -149,7 +157,7 @@ class AvbToolRunnerImpl @Inject constructor(
     private fun callPythonRun(argsJson: String): String {
         val module = pyModule ?: throw IllegalStateException("Python not initialized")
         val result = module.call("run", argsJson)
-        return result.asString()
+        return result.toString()
     }
 
     private fun parseResult(raw: String): AvbExecutionResult {
