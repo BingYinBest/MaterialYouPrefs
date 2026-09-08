@@ -23,34 +23,4 @@ data class CommandEntity(
     val isBuiltin: Boolean,
     val fetchedAt: Long,
     val aospVersion: String,
-) {
-    fun toModel(): CommandDefinition = CommandDefinition(
-        id = id,
-        name = name,
-        title = title,
-        summary = summary,
-        `group` = `group`,
-        iconKey = iconKey,
-        argsJson = argsJson,
-        paramsJson = paramsJson,
-        isBuiltin = isBuiltin,
-        fetchedAt = fetchedAt,
-        aospVersion = aospVersion,
-    )
-
-    companion object {
-        fun fromModel(d: CommandDefinition) = CommandEntity(
-            id = d.id,
-            name = d.name,
-            title = d.title,
-            summary = d.summary,
-            `group` = d.`group`,
-            iconKey = d.iconKey,
-            argsJson = d.argsJson,
-            paramsJson = d.paramsJson,
-            isBuiltin = d.isBuiltin,
-            fetchedAt = d.fetchedAt,
-            aospVersion = d.aospVersion,
-        )
-    }
-}
+)
