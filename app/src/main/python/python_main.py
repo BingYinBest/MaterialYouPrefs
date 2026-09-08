@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Python entry point for the avbtool Android runtime.
 
-The Kotlin side calls into this module via Chaquopy:
+The Kotlin side calls into this module via Chaquopy::
 
     py.call("python_main.run", args_json_str)
 
@@ -12,20 +12,30 @@ args_json_str is a JSON-encoded string like::
 and the returned value is a JSON string matching the shape of
 ``data/model/AvbExecutionResult.kt``.
 
-M3.1 scope
+M3.2 scope
 ----------
-Only ``python_main`` lives here. We do NOT import ``avbtool`` yet because
-that 200 KB vendored file lands in M3.2. The dispatch table has a small
-``version`` command so we can smoke-test the whole bridge end-to-end
-before touching avbtool at all.
+- ``version``: local info probe (no avbtool import).
+- Any other command: dynamically imported ``avbtool.py`` and run through
+  its argparse main. ``SystemExit`` is captured; stdout/stderr are
+  redirected through ``io.StringIO``.
+
+M3.3 will patch avbtool's ~36 ``subprocess.call(['openssl', ...])``
+calls to use the ``cryptography`` package so no system binary is needed.
+Until then, commands that call openssl will raise
+``FileNotFoundError`` which maps to ``PYTHON_EXCEPTION``.
 """
 
+import io
 import json
+import os
 import sys
+import tempfile
 import time
+import traceback
 
 
 _AOSP_HEAD = "386fb90492db3bd6bc484a579bcde5b43a2a0292"
+_AVBTOOL_VERSION = "1.0.0"
 
 
 def _success(exit_code, stdout, stderr, duration_ms):
@@ -51,7 +61,7 @@ def _handle_version(_args):
     start = time.monotonic()
     info = {
         "tool": "avbtool",
-        "version": "1.0.0",
+        "version": _AVBTOOL_VERSION,
         "aospHead": _AOSP_HEAD,
         "python": sys.version.split()[0],
         "runtime": "Chaquopy",
@@ -61,14 +71,50 @@ def _handle_version(_args):
     return _success(0, json.dumps(info), "", duration)
 
 
-_HANDLERS = {
-    "version": _handle_version,
-}
+def _handle_avbtool_command(command, args):
+    """Import avbtool.py and dispatch one subcommand.
+
+    We re-implement the ``__main__`` block of avbtool.py so the
+    argparse parser is exercised end-to-end (help / error paths
+    included).
+
+    The call happens in a temporary working directory so relative
+    output paths created by avbtool land somewhere predictable.
+    """
+    import avbtool as _avbtool  # noqa: F401 -- triggers vendored module load
+
+    argv = ["avbtool"] + [command] + list(args)
+    old_argv = list(sys.argv)
+    sys.argv = argv
+
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    buf_out = io.StringIO()
+    buf_err = io.StringIO()
+    sys.stdout = buf_out
+    sys.stderr = buf_err
+    try:
+        tool = _avbtool.AvbTool()
+        try:
+            tool.run(argv)
+            exit_code = 0
+        except SystemExit as e:
+            exit_code = e.code if isinstance(e.code, int) else (1 if e.code else 0)
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+        sys.argv = old_argv
+
+    return _success(
+        exit_code,
+        buf_out.getvalue(),
+        buf_err.getvalue(),
+        0,  # duration filled by caller
+    )
 
 
 def run(args_json):
     """Dispatch a single avbtool subcommand. Returns a JSON string."""
     started = time.monotonic()
+
     try:
         req = json.loads(args_json)
     except json.JSONDecodeError as e:
@@ -76,21 +122,44 @@ def run(args_json):
 
     command = req.get("commandName", "")
     argv = list(req.get("args", []))
-    handler = _HANDLERS.get(command)
-    if handler is None:
+
+    # `version` is handled locally (no avbtool import).
+    if command == "version":
+        return _handle_version(argv)
+
+    # Everything else goes through avbtool.py.
+    tmpdir = tempfile.mkdtemp(prefix="avbtool-", dir=os.getcwd() or None)
+    try:
+        result = _handle_avbtool_command(command, argv)
+    except ModuleNotFoundError as e:
         duration = int((time.monotonic() - started) * 1000)
         return _failure(
-            "UNKNOWN_PARAM",
-            "No handler for command '" + command + "'. "
-            "(avbtool.py vendor lands in M3.2)",
+            "PYTHON_EXCEPTION",
+            "Cannot import avbtool module: " + str(e),
             duration,
         )
-
-    try:
-        return handler(argv)
     except Exception as e:
         duration = int((time.monotonic() - started) * 1000)
-        return _failure("PYTHON_EXCEPTION", type(e).__name__ + ": " + str(e), duration)
+        tb = traceback.format_exc(limit=5)
+        return _failure(
+            "PYTHON_EXCEPTION",
+            type(e).__name__ + ": " + str(e) + "\n" + tb,
+            duration,
+        )
+    finally:
+        # Clean up tmpdir contents (best-effort). Files left by avbtool
+        # are still reachable from stdout JSON if caller wants to fetch.
+        try:
+            if os.path.isdir(tmpdir) and not os.listdir(tmpdir):
+                os.rmdir(tmpdir)
+        except OSError:
+            pass
+
+    # Fill in durationMs now that we have the real wall time.
+    duration = int((time.monotonic() - started) * 1000)
+    parsed = json.loads(result)
+    parsed["durationMs"] = duration
+    return json.dumps(parsed)
 
 
 def main(argv):
