@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
-    // M3: alias(libs.plugins.chaquopy)
+    alias(libs.plugins.chaquopy)
 }
 
 android {
@@ -18,9 +18,6 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Restrict to arm64-v8a only (ADR-004). Note: `ndk { abiFilters }` is a
-        // child of `defaultConfig`, not of `android`. Moving it out was a CI compile
-        // failure (Unresolved reference: ndk at build.gradle.kts:49).
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
@@ -53,15 +50,16 @@ android {
     }
 }
 
-// M3 才真正需要 Chaquopy（要拷贝 avbtool.py + 依赖）；M1/M2 阶段先禁用 chaquopy 块，
-// 避免空 sourceDirs 触发 plugin 报错。toml 里的 plugin/dep 定义保留，M3 只需解开注释。
-//
-// chaquopy {
-//     defaultVersion("3.12")
-//     version("3.12")
-//     abiFilters("arm64-v8a")
-//     sourceDirs = setOf("src/main/python")
-// }
+// M3.1: Chaquopy runtime.
+// - Python 3.12 (default in Chaquopy 15.0.1)
+// - abiFilters must match the `android.defaultConfig.ndk` filter above
+// - sourceDirs picks up `src/main/python/*.py` for embedding
+chaquopy {
+    defaultVersion("3.12")
+    version("3.12")
+    abiFilters("arm64-v8a")
+    sourceDirs = setOf("src/main/python")
+}
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -74,10 +72,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    // material-icons-extended is required because PrefData uses icons outside
-    // the small Icons.Filled/Outlined set that ships with material3
-    // (Wifi, Bluetooth, Storage, Apps, CameraAlt, Security, Accessibility,
-    // Language, Palette, DarkMode, FormatSize, BugReport, Analytics, ...).
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -88,21 +82,16 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-    // M1: coroutines (CommandRepository Flow APIs)
+    // M1: coroutines + JSON + DI annotations
     implementation(libs.kotlinx.coroutines.android)
-
-    // M1: JSON serialization (seed JSON + paramsJson)
     implementation(libs.kotlinx.serialization.json)
-
-    // M1: @Inject / @Singleton annotations (no DI framework yet, see ADR-010)
     implementation(libs.javax.inject)
 
-    // M3: Chaquopy + cryptography (commented out to avoid empty sourceDirs error)
-    // implementation(libs.chaquopy.python)
-    // implementation(libs.chaquopy.cryptography)
-    // implementation(libs.chaquopy.pyyaml)
+    // M3: Chaquopy + cryptography (M3.1 baseline; avbtool.py itself lands in M3.2)
+    implementation(libs.chaquopy.python)
+    implementation(libs.chaquopy.cryptography)
 
-    // Tests (added when DAO tests land in M2.5)
+    // Tests
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }
