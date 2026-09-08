@@ -11,7 +11,7 @@ activityCompose = "1.9.2"
 navCompose = "2.8.0"
 
 # --- avbtool additions (M1) ---
-# chaquopy = "15.0.0"  # M3 only; 15.0.0 doesn't exist on Maven, use 15.0.1+
+chaquopy = "15.0.0"
 room = "2.6.1"
 ksp = "2.0.20-1.0.25"
 coroutines = "1.8.1"
@@ -19,9 +19,13 @@ serializationJson = "1.6.3"
 serializationPlugin = "2.0.20"
 javaxInject = "1.0"
 
+# --- tests ---
+junit = "4.13.2"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -33,7 +37,8 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3",
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsExtended" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navCompose" }
 
-# M3: chaquopy = { group = "com.chaquo.python", name = "python", version.ref = "chaquopy" }
+# --- Chaquopy: Python runtime in Android ---
+chaquopy = { group = "com.chaquo.python", name = "python", version.ref = "chaquopy" }
 
 # --- Room: command definitions + execution history ---
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
@@ -43,12 +48,16 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 # --- Coroutines ---
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 # --- Serialization for commands_seed.json + --help parsing ---
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 
-# --- JSR-330 annotations for @Inject / @Singleton ---
+# --- JSR-330 annotations for @Inject / @Singleton (no injector wired yet; annotations are metadata only) ---
 javax-inject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }
+
+# --- Tests ---
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -56,4 +65,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "serializationPlugin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-# M3: chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
