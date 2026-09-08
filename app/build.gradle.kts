@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.chaquopy)
 }
 
 android {
@@ -35,6 +38,17 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        jniLibs.useLegacyPackaging = false
+        resources.excludes += "META-INF/INDEX.LIST"
+        resources.excludes += "META-INF/io.netty.versions.properties"
+        resources.excludes += "META-INF/AL2.0/LICENSE"
+    }
+
+    ndk {
+        abiFilters += listOf("arm64-v8a")
+    }
 }
 
 kotlin {
@@ -43,11 +57,23 @@ kotlin {
     }
 }
 
+// M3 才真正需要 Chaquopy（要拷贝 avbtool.py + 依赖）；M1/M2 阶段先禁用 chaquopy 块，
+// 避免空 sourceDirs 触发 plugin 报错。toml 里的 plugin/dep 定义保留，M3 只需解开注释。
+//
+// chaquopy {
+//     defaultVersion("3.12")
+//     version("3.12")
+//     abiFilters("arm64-v8a")
+//     // pip(pipfile = "src/main/python/requirements.txt")
+//     sourceDirs = setOf("src/main/python")
+// }
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+
     platform(libs.androidx.compose.bom)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
@@ -56,4 +82,18 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     debugImplementation(libs.androidx.ui.tooling)
+
+    // --- avbtool additions (M1) ---
+    implementation(libs.chaquopy)
+
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.serialization.json)
+
+    // JSR-330 annotations used by CommandRepository (@Inject, @Singleton).
+    implementation(libs.javax.inject)
 }

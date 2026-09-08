@@ -10,6 +10,15 @@ lifecycle = "2.8.6"
 activityCompose = "1.9.2"
 navCompose = "2.8.0"
 
+# --- avbtool additions (M1) ---
+chaquopy = "15.0.0"
+room = "2.6.1"
+ksp = "2.0.20-1.0.25"
+coroutines = "1.8.1"
+serializationJson = "1.6.3"
+serializationPlugin = "2.0.20"
+javaxInject = "1.0"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
@@ -24,7 +33,29 @@ androidx-material3 = { group = "androidx.compose.material3", name = "material3",
 androidx-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIconsExtended" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navCompose" }
 
+# --- Chaquopy: Python runtime in Android ---
+chaquopy = { group = "com.chaquo.python", name = "python", version.ref = "chaquopy" }
+
+# --- Room: command definitions + execution history ---
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+# --- Coroutines ---
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+
+# --- Serialization for commands_seed.json + --help parsing ---
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
+
+# --- JSR-330 annotations for @Inject / @Singleton (no injector wired yet;
+# --- annotations are metadata only, resolved at class-load time) ---
+javax-inject = { group = "javax.inject", name = "javax.inject", version.ref = "javaxInject" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "serializationPlugin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
