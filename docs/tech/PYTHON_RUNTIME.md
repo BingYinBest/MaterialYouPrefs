@@ -9,7 +9,7 @@ Chaquopy（https://chaquo.com/chaquopy/），原因：
 
 ## 版本
 - Python 3.13.x
-- Chaquopy 14.0+
+- Chaquopy 14.0+)
 
 ## Gradle 配置（关键片段）
 ```kotlin
