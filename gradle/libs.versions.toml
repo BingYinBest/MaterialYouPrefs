@@ -11,13 +11,16 @@ activityCompose = "1.9.2"
 navCompose = "2.8.0"
 
 # --- avbtool additions (M1) ---
-chaquopy = "15.0.0"
+chaquopy = "15.0.1"
 room = "2.6.1"
 ksp = "2.0.20-1.0.25"
 coroutines = "1.8.1"
 serializationJson = "1.6.3"
 serializationPlugin = "2.0.20"
-javaxInject = "1.0"
+# The actual published version on Maven Central is "1" (not "1.0").
+# See https://repo1.maven.org/maven2/javax/inject/javax.inject/ —
+# only "1/" exists. Using "1.0" causes 'Could not find javax.inject:javax.inject:1.0'.
+javaxInject = "1"
 
 # --- tests ---
 junit = "4.13.2"
@@ -38,6 +41,7 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navCompose" }
 
 # --- Chaquopy: Python runtime in Android ---
+# Updated 15.0.0 -> 15.0.1 (15.0.0 does not exist on Maven Central).
 chaquopy = { group = "com.chaquo.python", name = "python", version.ref = "chaquopy" }
 
 # --- Room: command definitions + execution history ---
