@@ -18,20 +18,6 @@ import kotlinx.coroutines.flow.stateIn
  * ViewModel for the Home tab. Reads commands from Room via
  * [CommandRepository.observeAll] and groups them alphabetically by
  * their `group` field for stable UI ordering.
- *
- * M2.5 notes:
- *  - `CommandEntity` doesn't persist the seed JSON `tab` field, so we
- *    can't yet filter by `tab == "home"` in Room. This VM returns ALL
- *    commands grouped; M2.5 scope is 'data path smoke test' only.
- *  - Room schema migration to add a `tab` column is deferred to M3.
- *  - Icon is resolved via [iconKeyToIcon]; unknown keys fall back to Info.
- *  - Empty state (before seed completes) is exposed as `emptyList()`.
- *
- * Scope note: `viewModelScope` (extension property) needs
- * `lifecycle-viewmodel-ktx` which we haven't added. Instead we
- * create our own SupervisorJob scope tied to [onCleared] so
- * cancellation is explicit. If we add lifecycle-viewmodel-ktx later,
- * we can switch to `viewModelScope`.
  */
 class HomeViewModel(repository: CommandRepository) : ViewModel() {
 
@@ -41,7 +27,7 @@ class HomeViewModel(repository: CommandRepository) : ViewModel() {
         .map { commands -> groupByTab(commands) }
         .stateIn(
             scope = vmScope,
-            started = SharingStarted WhileSubscribed(5_000L),
+            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = emptyList(),
         )
 
