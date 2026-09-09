@@ -213,6 +213,10 @@ class DetailViewModel(
         )
 
         vmScope.launch {
+            // Hold onto the request outside the try so the persist step
+            // below can record argsJson/paramsJson even on failure.
+            var request: AvbExecutionRequest? = null
+
             val result: AvbExecutionResult = try {
                 // Stage each SAF Uri to a local temp file, then override
                 // the inputValues slot for that param so argv carries the
@@ -250,19 +254,20 @@ class DetailViewModel(
                     }
                 }
 
-                val request = AvbExecutionRequest(
+                val req = AvbExecutionRequest(
                     commandId = cmd.id,
                     args = args,
                     params = resolvedValues,
                     inputUris = safUris.values.toList(),
                     outputUri = outputUri,
                 )
+                request = req
 
                 _state.value = _state.value.copy(
                     status = "执行中：${cmd.name} …",
                 )
 
-                runner.run(request)
+                runner.run(req)
             } catch (t: Throwable) {
                 AvbExecutionResult.Failure(
                     errorCode = ErrorCode.UNKNOWN,
@@ -275,31 +280,36 @@ class DetailViewModel(
 
             // Persist to execution_history so the Home card can show real
             // recent runs (M4.3) and so the user doesn't lose the trace
-            // after navigating away.
-            runCatching {
-                db.executionDao().insert(
-                    ExecutionEntity(
-                        commandId = cmd.id,
-                        argsJson = json.encodeToString(request.args),
-                        paramsJson = json.encodeToString(request.params),
-                        stdout = when (result) {
-                            is AvbExecutionResult.Success -> result.stdout
-                            is AvbExecutionResult.Failure -> ""
-                        },
-                        stderr = when (result) {
-                            is AvbExecutionResult.Success -> result.stderr
-                            is AvbExecutionResult.Failure -> result.message
-                        },
-                        exitCode = when (result) {
-                            is AvbExecutionResult.Success -> result.exitCode
-                            is AvbExecutionResult.Failure -> -1
-                        },
-                        startedAtMs = startedAt,
-                        durationMs = duration,
-                        inputFiles = safUris.values.joinToString(",") { it.toString() },
-                        outputFiles = outputUri?.toString() ?: "",
-                    ),
-                )
+            // after navigating away. If staging threw before we could
+            // build the request, `request` is still null and we skip the
+            // history write — the user still sees the error status.
+            val persistedRequest = request
+            if (persistedRequest != null) {
+                runCatching {
+                    db.executionDao().insert(
+                        ExecutionEntity(
+                            commandId = cmd.id,
+                            argsJson = json.encodeToString(persistedRequest.args),
+                            paramsJson = json.encodeToString(persistedRequest.params),
+                            stdout = when (result) {
+                                is AvbExecutionResult.Success -> result.stdout
+                                is AvbExecutionResult.Failure -> ""
+                            },
+                            stderr = when (result) {
+                                is AvbExecutionResult.Success -> result.stderr
+                                is AvbExecutionResult.Failure -> result.message
+                            },
+                            exitCode = when (result) {
+                                is AvbExecutionResult.Success -> result.exitCode
+                                is AvbExecutionResult.Failure -> -1
+                            },
+                            startedAtMs = startedAt,
+                            durationMs = duration,
+                            inputFiles = safUris.values.joinToString(",") { it.toString() },
+                            outputFiles = outputUri?.toString() ?: "",
+                        ),
+                    )
+                }
             }
 
             when (result) {
