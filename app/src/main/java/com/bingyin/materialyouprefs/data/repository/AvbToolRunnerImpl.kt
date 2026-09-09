@@ -48,6 +48,14 @@ import javax.inject.Singleton
  *     argparse help output through [AvbHelpParser].
  *   - M3.5.1: FEC now ships via pure-Python RS encoder (`avb_fec.py`);
  *     `FEC_LOADED` is set to `true` so the UI can surface the flag.
+ *   - M3.5.2a: `ensureInitialized()` calls `python_main.init_runtime(cacheDir)`
+ *     right after importing the Python module, so `tempfile.NamedTemporaryFile()`
+ *     inside `avbtool.py`'s `sign()` writes under the app's private cache
+ *     instead of the system `/tmp`.
+ *   - M3.5.2c: mmap-backed large-file I/O is on the Python side (`avb_io.py`);
+ *     nothing to wire here — `avb_fec.encode_fec` picks it up automatically.
+ *   - M3.5.2b (SAF fd bridge): deferred to M4 UI work. Requires a SAF picker
+ *     to test end-to-end, so it lives with the UI milestone rather than here.
  *
  * Chaquopy 15 API notes:
  *   - There is no `PyModule` class. Use `PyObject` from `py.getModule(name)`.
@@ -175,7 +183,20 @@ class AvbToolRunnerImpl @Inject constructor(
     private fun ensureInitialized() {
         if (pyModule != null) return
         val py = Python.getInstance()
-        pyModule = py.getModule("python_main")
+        val mod = py.getModule("python_main")
+        pyModule = mod
+        // M3.5.2a: relocate tempfile's TMPDIR to the app's cache dir before
+        // any avbtool command runs. `avbtool.py` calls `tempfile.NamedTemporaryFile()`
+        // once inside `sign()`; on Android the system `/tmp` is not always
+        // writable (target SDK 24+ apps with scoped storage). Pointing TMPDIR
+        // at cacheDir/avbtool-tmp/ makes the tempfile land on private storage
+        // where we already have write permission.
+        runCatching {
+            val cachePath = appContext.cacheDir.absolutePath
+            mod.call("init_runtime", cachePath)
+        }.onFailure { t ->
+            Log.w(TAG, "init_runtime() failed (non-fatal): ${t.message}")
+        }
     }
 
     private fun encodeArgsJson(request: AvbExecutionRequest): String {
