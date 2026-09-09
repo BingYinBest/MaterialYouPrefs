@@ -10,6 +10,43 @@
 
 ---
 
+## 2026-09-10
+
+### 12:55 — M3.5.2a+c 完成，IO 优化落地（`06fec52`）
+
+**M3.5.2 拆三子任务，本轮完成 a+c，b 延后到 M4 UI**（用户拍板）。5 个 commit：
+
+- `eba1aa3` 新增 `app/src/main/python/avb_io.py`（158 行，md5 `7d5454b2...`）
+- `625a194` `avb_fec.py` — `encode_fec()` 用 `smart_read/smart_write`
+- `8fbe72f` `python_main.py` — 新增 `init_runtime(cache_dir)`
+- `b0e3bf8` `AvbToolRunnerImpl.kt` — `ensureInitialized()` 里调 `init_runtime(appContext.cacheDir.absolutePath)`
+- `06fec52` 文档：AOSP_PATCH / SAF_BRIDGE / DEVLOG / TODO
+
+**M3.5.2a — tempfile 落到 app cache**：
+- `python_main.init_runtime(cache_dir)` 把 `os.environ['TMPDIR']` 指到 `cache_dir/avbtool-tmp/`
+- Kotlin 侧 `ensureInitialized()` 首次 import 后立即调，`runCatching` 包裹，失败不阻断（avbtool 大多数命令不用 tempfile）
+- 目的：Android target SDK 24+ 上 `/tmp` 不保证可写，避免 `sign()` 里的 `NamedTemporaryFile()` 抛 PermissionError
+
+**M3.5.2c — 大文件 mmap**：
+- 新增 `avb_io.py`：`smart_read/smart_write`，阈值 `MMAP_THRESHOLD_BYTES = 32 * 1024 * 1024`（32 MB）
+- 小文件走普通 `f.read()/f.write()`；大文件先 `os.open` 拿 fd，`mmap.MAP_PRIVATE + PROT_READ`（读）/ `mmap.MAP_SHARED + PROT_READ|PROT_WRITE`（写）
+- 大文件写入前 `truncate(size)` 分配长度，再 `mapper[:] = data; mapper.flush()`
+- 局限：`bytes(mapper)` 仍会复制到 Python 堆一次，实际内存峰值没减半；只是**减少系统调用次数**
+
+**M3.5.2b（延后）**：SAF fd 桥（`/saf/fd/<id>` + `builtins.open` monkey-patch + Kotlin `registerSafFd`）延后到 M4 UI。当前 `stageInput/promoteToOutput` 拷贝方案 100MB 以下够用，fd 桥是优化非必需；单在 M3.5 做无法端到端验证（需要 SAF picker）。
+
+**本地验证**（Linux env）：
+- `py_compile` 三份 py 全部通过
+- `smart_read`/`smart_write` 33MB 随机数据 roundtrip ✅
+- `init_runtime` 幂等（第 2 次返回 False）✅
+- avbtool `add_hashtree_footer --image img --partition_size $((4<<20)) --fec_num_roots 2 --key test_priv.pem` 端到端 ✅ → `info_image` 输出 `FEC num roots: 2 / FEC size: 16384 bytes`
+
+**踩坑**：初版 `smart_read` 用 `mmap.mmap(open(path,'rb'), ...)` 报 `TypeError: '_io.BufferedReader' object cannot be interpreted as an integer`——`mmap.mmap` 需要 fd 或 fileno，不能传 BufferedReader。改成 `fd = os.open(path, os.O_RDONLY)` + `try/finally os.close(fd)` 修复。
+
+**下一步**：等 CI 绿后打 tag `m3.5.2-io-mmap-tmpdir`；然后进 M4 UI（DetailScreen 参数表单 + SAF picker + 执行输出双 pane + execution_history；届时把 M3.5.2b 合并进来一起做）。
+
+---
+
 ## 2026-09-09
 
 ### 23:52 — M3.5.1 完成，纯 Python FEC 落地（`ae2a28a`）
