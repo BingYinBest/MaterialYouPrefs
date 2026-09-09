@@ -59,6 +59,7 @@ import com.bingyin.materialyouprefs.data.model.CommandDefinition
 import com.bingyin.materialyouprefs.data.model.CommandParam
 import com.bingyin.materialyouprefs.data.model.ParamType
 import com.bingyin.materialyouprefs.ui.iconKeyToIcon
+import com.bingyin.materialyouprefs.ui.viewmodel.DetailState
 import com.bingyin.materialyouprefs.ui.viewmodel.DetailViewModel
 
 /**
