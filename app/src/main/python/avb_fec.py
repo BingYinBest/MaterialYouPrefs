@@ -35,6 +35,8 @@ formula but there are no on-device benchmarks for them.
 import hashlib
 import struct
 
+import avb_io  # M3.5.2c: mmap-backed I/O for large images
+
 
 # ----- GF(256) arithmetic -----
 
@@ -148,12 +150,14 @@ def _build_footer(input_size, num_roots, fec_parity_size, input_bytes):
 # ----- top-level API -----
 
 def encode_fec(input_path, output_path, num_roots):
-  """Encode `input_path`, write `fec`-compatible output to `output_path`."""
-  with open(input_path, 'rb') as f:
-    data = f.read()
+  """Encode `input_path`, write `fec`-compatible output to `output_path`.
+
+  M3.5.2c: uses `avb_io.smart_read`/`smart_write` so images >= 32MB are
+  handled through `mmap` instead of a single `bytes` copy.
+  """
+  data, _mapper = avb_io.smart_read(input_path)
   out = encode_fec_buffer(data, num_roots)
-  with open(output_path, 'wb') as f:
-    f.write(out)
+  avb_io.smart_write(output_path, out)
 
 
 def encode_fec_buffer(input_bytes, num_roots):
