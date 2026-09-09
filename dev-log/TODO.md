@@ -125,12 +125,12 @@
 - [x] 33MB 随机数据 roundtrip 测试通过
 - [x] 端到端：`add_hashtree_footer --fec_num_roots 2` 跑通，`info_image` 完整解析
 
-### M3.5.2b SAF fd 桥 ❌（延后到 M4.2b）
+### M3.5.2b SAF fd 桥 ❌（延后到 M4.2c）
 
 - [ ] `SAF_BRIDGE.md` 方案落地：`/saf/fd/<id>` 虚拟路径
 - [ ] Python 侧 monkey-patch `builtins.open` 识别 SAF 前缀
-- [ ] Kotlin `registerSafFd` 通道（Python ↔ Kotlin fd 传递）
-- [ ] 与 DetailScreen 的 SAF picker 合并实施（M4）
+- [ ] Kotlin `registerSafFd` 通道（Python ↔ Kotlin fd 传递���
+- [ ] 与 DetailScreen 的 SAF picker 合并实施（M4.2c）
 
 ### M3.5.2 收尾 ✅（CI 绿，tag `m3.5.2-io-mmap-tmpdir` @ `5cc5bab`）
 
@@ -158,7 +158,15 @@
     - SAF Uri 在 Java/Kotlin 里**不能**直接放到 argv 传给 Python —— 必须先经 `stageInput` 拷贝到 `cacheDir` 才能被 Python 的 `open()` 读到；这次 M4.2 走的就是这条拷贝路径
     - Kotlin `try { val x = ... }` 定义的局部变量在 try 外面不可见；如果要跨作用域（比如 persist 步骤要读 request）→ 用 `var x: T? = null` 声明在 try 外面，try 里面赋 `x = ...`
     - 手写 MCP `content` 时不要在函数签名里插不必要的换行（`choices: List<String>,\n value: String` 会被 Kotlin 解析成两个独立参数），一律写紧凑形式
-- [ ] **M4.2b SAF 输出 + fd-bridge**（`registerSafFd` + monkey-patch `open/write`，让 avbtool 通过 `/saf/fd/<id>` 直写）
+- [x] **M4.2b SAF 输出（stage+promote 版）✅**（tag `m4.2b-saf-output` @ `4e045a7`）
+  - **方案降级**：最初计划走 fd-bridge（`/saf/fd/<id>` 虚拟路径 + `builtins.open` monkey-patch 直写 SAF Uri），评估 fd 生命周期 + Chaquopy fd 传递 + monkey-patch 陷阱风险后主动回滚，改为 stage+promote：Python 报生成文件清单 → Kotlin runner 拷贝最新一份到用户选的 Uri
+  - `python_main.py`：`_success()` 加 `generatedFiles` 字段；`_collect_workdir_files()` 收 tmpdir 内常规文件；`_handle_avbtool_command` 接受 `workdir` 参数、chdir/恢复原 cwd
+  - `AvbToolRunnerImpl.kt`：`run()` 中 Success + exitCode=0 + `request.outputUri != null` 时读 `generatedFiles`，取 `last()` 作为候选，`runCatching { promoteToOutput(candidate, outputUri) }` 成功后 `result.copy(outputUri = ...)` 回填；失败仅 `Log.w`，不覆盖成功结果
+  - `DetailViewModel.kt`：`DetailState.outputUri` + `setOutputUri()`；`execute(outputUri?)` 用 `chosenOutputUri = outputUri ?: current.outputUri`；persist 块写 `outputFiles = chosenOutputUri?.toString() ?: ""`
+  - `DetailScreen.kt`：`rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*"))`；actions 行加带 Save 图标的 OutlinedButton"输出到文件…/输出已选"
+  - **CI 瞬时故障复盘**：4 个 commit 首次推送后 CI 全红（`Build Debug APK` exit 1，log API 403 看不到细节）；加 `continue-on-error + tee build.log + upload-artifact on failure` 到 workflow 后同一批代码重跑直接绿。属于 GitHub runner 侧瞬时问题，代码本身无编译错误
+  - 验收：`make_vbmeta_image` 等输出型命令可选择 SAF 输出 Uri，产物真实写入
+- [ ] **M4.2c fd-bridge（可选）**：真正让 avbtool 通过 `/saf/fd/<id>` 虚拟路径直写 SAF Uri（`registerSafFd` + monkey-patch `builtins.open`）；本轮代码已回滚但设计资产保留在 `docs/tech/SAF_BRIDGE.md`
 - [ ] **M4.3** Home 常用命令卡切 `execution_history` 真实数据 + 空态 / 错误态 + ViewModel 单测
 
 ## M5 CI + 发布 ❌
@@ -186,3 +194,4 @@
 | M3.5.2a+c | `m3.5.2-io-mmap-tmpdir` | `5cc5bab` |
 | M4.1 | `m4.1-detail-form` | `f37614f` |
 | M4.2 | `m4.2-saf-picker` | `1a9d56a` |
+| M4.2b | `m4.2b-saf-output` | `4e045a7` |
