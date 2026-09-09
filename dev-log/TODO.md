@@ -75,7 +75,7 @@
 - [x] `app/build.gradle.kts` 加 `signingConfigs { devFixed { ... } }`，debug + release 都指向它
 - [x] 之后 CI 生成的 APK 签名一致，可直接覆盖安装
 
-### M3.3 patch openssl ✅（v2 纯 Python RSA，`4d62088`，待 CI 绿确认 tag）
+### M3.3 patch openssl ✅（v2 纯 Python RSA，Run 全绿，tag `m3.3-pure-python-rsa` @ `4d62088`）
 
 **v1 失败复盘**（Run 122）：
 - 尝试 `pip { install("cryptography==43.0.1") }`，但 chaquo.com/pypi-13.1 **不 mirror** cryptography，PyPI 也没有 Android arm64-v8a wheel，sdist 需要 `maturin` 但 CI 没装
@@ -91,6 +91,7 @@
 - [x] patch avbtool.py 的 4 处 openssl subprocess 调用：`RSAPublicKey.__init__` / `sign()` / `verify_vbmeta_signature()` + `import avb_rsa`
 - [x] 生成 `patches/avbtool-android.patch`（137 行 unified diff，4 处 hunk）
 - [x] 本地互验：openssl genrsa 2048 生成的签名 == `avb_rsa.rsa_sign_raw` 输出（逐字节一致）；篡改 1 字节正确拒绝
+- [x] 签 tag `m3.3-pure-python-rsa` @ `4d62088`
 
 ### M3.4 Kotlin ↔ Python 桥完善 ✅（Run 163 绿，`8eecab3`）
 
@@ -135,5 +136,5 @@
 | M3.1 | （未单独 tag，见 M3.2） | `2a7afa8a` |
 | M3.2 | `m3.2-avbtool-vendored` | `10f5802c` |
 | M3.2.5 | （未 tag） | `931e7cf` |
-| M3.3 v2 | （待 CI 绿后 tag `m3.3-pure-python-rsa`） | `4d62088` |
+| M3.3 v2 | `m3.3-pure-python-rsa` | `4d62088` |
 | M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
