@@ -19,10 +19,18 @@ M3.2 scope
   its argparse main. ``SystemExit`` is captured; stdout/stderr are
   redirected through ``io.StringIO``.
 
-M3.3 will patch avbtool's ~36 ``subprocess.call(['openssl', ...])``
-calls to use the ``cryptography`` package so no system binary is needed.
-Until then, commands that call openssl will raise
-``FileNotFoundError`` which maps to ``PYTHON_EXCEPTION``.
+M3.3 (deferred, v2 plan)
+------------------------
+Patch avbtool's 4 ``subprocess.call(['openssl', ...])`` sites to a
+pure-Python RSA module (``avb_rsa.py``). No external pip dependency.
+See ``docs/tech/AOSP_PATCH.md`` for the failure trace of the v1
+``cryptography`` attempt.
+
+M3.4 scope
+----------
+Add ``__help__`` virtual command: runs ``avbtool <subcmd> --help`` and
+returns the argparse help text. Kotlin-side ``AvbToolRunnerImpl.fetchHelp``
+calls this and feeds the output to ``AvbHelpParser``.
 """
 
 import io
@@ -111,6 +119,18 @@ def _handle_avbtool_command(command, args):
     )
 
 
+def _handle_help(args):
+    """Handle the ``__help__`` virtual command: run ``avbtool <subcmd> --help``.
+
+    Args come in as ``["<subcommand_name>"]``. Returns the raw argparse
+    help output in ``stdout`` so the Kotlin-side ``AvbHelpParser`` can
+    parse it. Errors (unknown subcommand) land in ``stderr``.
+    """
+    if not args:
+        return _failure("UNKNOWN_PARAM", "__help__ requires one subcommand name")
+    return _handle_avbtool_command(args[0], ["--help"])
+
+
 def run(args_json):
     """Dispatch a single avbtool subcommand. Returns a JSON string."""
     started = time.monotonic()
@@ -126,6 +146,10 @@ def run(args_json):
     # `version` is handled locally (no avbtool import).
     if command == "version":
         return _handle_version(argv)
+
+    # `__help__` is a virtual command -- dispatch to ``<subcmd> --help``.
+    if command == "__help__":
+        return _handle_help(argv)
 
     # Everything else goes through avbtool.py.
     tmpdir = tempfile.mkdtemp(prefix="avbtool-", dir=os.getcwd() or None)
