@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.NorthEast
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Build
@@ -324,7 +324,7 @@ private fun RecentRow(
             )
         }
         Icon(
-            imageVector = Icons.AutoMirrored.Filled.NorthEast,
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
             contentDescription = null,
             modifier = Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -393,6 +393,7 @@ private fun StatusRow(label: String, value: String) {
 }
 
 // ---------- Helpers ---------------------------------------------------
+
 private fun formatRelative(timestampMs: Long): String =
     HomeViewModel.formatRelative(timestampMs)
 
