@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -79,6 +80,12 @@ import com.bingyin.materialyouprefs.ui.viewmodel.DetailViewModel
  * that opens [ActivityResultContracts.OpenDocument]. The returned Uri
  * is stored in [DetailViewModel.setInputUri] and staged to a local
  * temp file on execute (see the ViewModel).
+ *
+ * M4.2b output picker: a Save icon button opens
+ * [ActivityResultContracts.CreateDocument] so the user can name a
+ * destination file. The Uri is stored via [DetailViewModel.setOutputUri]
+ * and the runner promotes the freshest generated file into it after
+ * execution.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -151,6 +158,20 @@ private fun CommandExecutionContent(
         // validate file content (e.g. a key file must be PEM) — we trust
         // avbtool's own error messages rather than enforcing extension.
         filePicker.launch(arrayOf("*/*"))
+    }
+
+    // M4.2b: output picker uses CreateDocument so the user can type a
+    // destination filename; the runner will promote the freshest file
+    // avbtool wrote into this Uri after execution completes.
+    val outputPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*"),
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.setOutputUri(uri)
+    }
+    fun openOutputPicker() {
+        outputPicker.launch(
+            state.command?.name?.let { "avbtool-${it}.bin" } ?: "avbtool-output.bin",
+        )
     }
 
     Column(
@@ -267,6 +288,23 @@ private fun CommandExecutionContent(
                         }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("执行")
+                    }
+                    // M4.2b: let the user pick a SAF destination for the
+                    // freshest file avbtool writes (promoted via
+                    // AvbToolRunner.promoteToOutput before returning).
+                    OutlinedButton(
+                        onClick = { openOutputPicker() },
+                        enabled = !state.isRunning,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Save,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (state.outputUri != null) "输出已选" else "输出到文件…",
+                        )
                     }
                     OutlinedButton(
                         onClick = { viewModel.clearResult() },
