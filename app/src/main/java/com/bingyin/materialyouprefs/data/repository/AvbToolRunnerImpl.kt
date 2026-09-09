@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
@@ -54,8 +55,9 @@ import javax.inject.Singleton
  *     instead of the system `/tmp`.
  *   - M3.5.2c: mmap-backed large-file I/O is on the Python side (`avb_io.py`);
  *     nothing to wire here — `avb_fec.encode_fec` picks it up automatically.
- *   - M3.5.2b (SAF fd bridge): deferred to M4 UI work. Requires a SAF picker
- *     to test end-to-end, so it lives with the UI milestone rather than here.
+ *   - M3.5.2b (SAF fd bridge): deferred to M4.2c. M4.2b uses the simpler
+ *     stage+promote path: python reports generated files, we copy the
+ *     freshest one into the user's output Uri after execution.
  *
  * Chaquopy 15 API notes:
  *   - There is no `PyModule` class. Use `PyObject` from `py.getModule(name)`.
@@ -81,7 +83,28 @@ class AvbToolRunnerImpl @Inject constructor(
                 ensureInitialized()
                 val argsJson = encodeArgsJson(request)
                 val raw = callPythonRun(argsJson)
-                parseResult(raw)
+                var result = parseResult(raw)
+                // M4.2b: when the caller picked an output Uri and Python
+                // reported generated files in its tmpdir, promote the
+                // freshest one into the SAF Uri. Done here (suspend-safe)
+                // so the UI only sees the final URI-resolved result.
+                if (result is AvbExecutionResult.Success &&
+                    result.exitCode == 0 &&
+                    request.outputUri != null
+                ) {
+                    val generated = parseGeneratedFiles(raw)
+                    if (generated.isNotEmpty()) {
+                        val candidate = generated.last()
+                        runCatching {
+                            if (promoteToOutput(candidate, request.outputUri!!)) {
+                                result = result.copy(outputUri = request.outputUri)
+                            }
+                        }.onFailure { t ->
+                            Log.w(TAG, "promoteToOutput after run failed", t)
+                        }
+                    }
+                }
+                result
             } catch (e: PyException) {
                 AvbExecutionResult.Failure(
                     errorCode = ErrorCode.PYTHON_EXCEPTION,
@@ -246,6 +269,18 @@ class AvbToolRunnerImpl @Inject constructor(
                 message = "Unexpected result kind: $kind",
             )
         }
+    }
+
+    /**
+     * M4.2b: read the ordered `generatedFiles` list Python returned
+     * (files that landed inside the run's tmpdir). Empty if the command
+     * didn't write anything.
+     */
+    private fun parseGeneratedFiles(raw: String): List<String> {
+        val root = json.parseToJsonElement(raw).jsonObject
+        return root["generatedFiles"]?.jsonArray?.mapNotNull {
+            it.jsonPrimitive.content
+        } ?: emptyList()
     }
 
     companion object {
