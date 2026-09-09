@@ -27,7 +27,7 @@
 - [x] Room entity / dao / db / repo 全套
 - [x] `AvbToolRunner` 接口（7 方法：run / fetchHelp / aospHead / isFecLoaded / stageInput / promoteToOutput / cleanupTemp）
 - [x] `AvbExecutionRequest` / `AvbExecutionResult` / `OutputFile` model
-- [x] `CommandSeedModels`（kotlinx.serialization）
+- [x] `CommandSeedModels`（k kotlinx.serialization）
 - [x] `AvbHelpParser`（argparse `--help` 解析器）
 - [x] `CommandRepository`（seed + 24h 缓存 + fallback）
 
@@ -137,14 +137,19 @@
 - [x] CI 绿（3 个 Build APK run 全部 success）
 - [x] 签 tag `m3.5.2-io-mmap-tmpdir` @ `5cc5bab`
 
-## M4 UI 接动作 ❌
+## M4 UI 接动作 ◐
 
-- [ ] DetailScreen 参数表单（按 `CommandParam` 动态渲染）
-- [ ] SAF picker 集成（输入文件 / 输出 URI）— 与 M3.5.2b 一起做
-- [ ] 执行 + 输出展示（stdout / stderr 双 pane）
-- [ ] 常用命令卡切到 `execution_history` 真实历史
-- [ ] 空态 / 错误态
-- [ ] ViewModel 单元测试
+- [x] **M4.1 DetailScreen 参数表单 + 执行 + 输出 ✅**（tag `m4.1-detail-form` @ `f37614f`）
+  - [x] `DetailViewModel.kt`（300 行）：`DetailState` 顶层类 + loadCommand + setValue + execute + clearResult + execution_history 落库
+  - [x] `DetailScreen.kt`（540 行）：TopAppBar + Status strip + CommandHeader + ParamRow（按 ParamType 分支：BOOLEAN→Switch / CHOICE→ExposedDropdownMenuBox / 其他→OutlinedTextField）+ 执行按钮 + OutputSection（SelectionContainer + Monospace + 240dp 高 + 64KB 截断）+ ErrorView
+  - [x] 参数展开为 `--flag=value` argv；BOOLEAN truthy 才发裸 `--flag`；必填校验
+  - [x] 教训沉淀：
+    - MCP `push_files` 会吃掉文件末尾字符（大文件一律用 `create_or_update_file`）
+    - Kotlin 不支持 tuple destructuring（`val (a,b,c,d) = when {...} -> (x,y,z,w)`）
+    - Compose M3 1.3.0 `Scaffold`/`TopAppBar`/`ExposedDropdownMenuBox`/`menuAnchor()` 都 experimental，需 `@OptIn(ExperimentalMaterial3Api::class)`
+    - `DetailState` 是顶层类（在 `DetailViewModel.kt` 里）→ 必须单独 import，不能写 `DetailViewModel.DetailState`
+- [ ] M4.2 SAF picker 集成（输入文件 / 输出 URI）+ M3.5.2b fd 桥
+- [ ] M4.3 常用命令卡切到 `execution_history` 真实历史 + 空态 / 错误态 + ViewModel 单测
 
 ## M5 CI + 发布 ❌
 
@@ -169,3 +174,4 @@
 | M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
 | M3.5.1 | `m3.5-fec-pure-python` | `ae2a28a` |
 | M3.5.2a+c | `m3.5.2-io-mmap-tmpdir` | `5cc5bab` |
+| M4.1 | `m4.1-detail-form` | `f37614f` |
