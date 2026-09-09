@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="ic_launcher_background">#6750A4</color>
-</resources>
+<!--
+  M5 cleanup: `ic_launcher_background` was flagged by lint UnusedResources.
+  The launcher icon uses an adaptive foreground PNG and does not need a
+  background color resource. Kept as an empty <resources> root so the file
+  still parses and other flavors/locale variants can re-add colors here
+  without touching the build script.
+-->
+<resources />
