@@ -97,16 +97,28 @@
 
 - [x] `python_main.py` 加 `__help__` 虚拟命令：`{"commandName": "__help__", "args": ["<subcmd>"]}` → dispatch 到 `<subcmd> --help`
 - [x] `fetchHelp` 真实现：Kotlin 侧 `AvbToolRunnerImpl.fetchHelp()` 调 `__help__` 命令 → 管道 `AvbHelpParser.parse()` → 返回 `List<CommandParam>`（commit `8eecab3`）
-- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5）
+- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5.2）
 - [x] 签 tag `m3.4-fetchhelp-real` @ `8eecab3`
 
-### M3.5 SAF 桥 + FEC ❌
+### M3.5.1 FEC 编码 ✅（纯 Python RS，`ae2a28a`）
 
-- [ ] `SAFBRIDGE.md` 方案落地：`/saf/fd/<fd>` 虚拟路径
+- [x] `app/src/main/python/avb_fec.py`（203 行，纯 Python RS(255,253) GF(256) GF(0x11d) 多项式除法，零外部依赖）
+- [x] `calc_fec_data_size()` 替换：直接套 libfec `ecc.h` 公式 `rounds * roots * 4096 + 4096`
+- [x] `generate_fec_data()` 替换：`open().read()` + `avb_fec.encode_fec_buffer()` + 60 字节 footer 校验（`<LLLLLQ32s`，magic=0xFECFECFE）
+- [x] patch avbtool.py 2 处 FEC subprocess 调用：P1 `import avb_fec` + P2 `calc_fec_data_size` + P3 `generate_fec_data`
+- [x] `patches/avbtool-android.patch` 从 4 hunk 扩到 **6 hunk**（M3.3 RSA 4 处 + M3.5 FEC 2 处）
+- [x] `AvbToolRunnerImpl.kt` `FEC_LOADED = true`
+- [x] 集成测试：`add_hashtree_footer --fec_num_roots 2` 对 1MB 随机镜像跑通，`info_image` 完整解析
+- [ ] 打 tag `m3.5-fec-pure-python`（等 CI 绿）
+- [ ] 真机验证 FEC 编码布局与 libfec 逐字节一致（首次写入分区后跑 `verify_image`）
+
+### M3.5.2 SAF 桥 ❌（未开始，依赖 M4 UI 才能真机验）
+
+- [ ] `SAF_BRIDGE.md` 方案落地：`/saf/fd/<fd>` 虚拟路径
+- [ ] Python 侧 monkey-patch `builtins.open` 识别 SAF 前缀
+- [ ] Kotlin `registerSafFd` 通道（Python ↔ Kotlin fd 传递）
 - [ ] `stageInput` / `promoteToOutput` 真正读写 content URI（当前 M3.2 版已能拷贝文件，但没有 Python 侧透明桥）
-- [ ] `external/avb/libavb/libavb/src/fec/fec_rs.c` 编译 `libavbfec.so`
-- [ ] CI workflow 加 NDK 工具链
-- [ ] ctypes dlopen 胶水（Python 侧）
+- [ ] Python 侧 `tempfile` 落到 app cache dir（不用系统 `/tmp`）
 
 ## M4 UI 接动作 ❌
 
@@ -130,7 +142,7 @@
 
 ## 里程碑签 tag 一览
 
-| 里程碑 | Tag | Commit |
+| ���程碑 | Tag | Commit |
 |--------|-----|--------|
 | M2.6+ | `m2.6-home-4cards` | `e223168` |
 | M3.1 | （未单独 tag，见 M3.2） | `2a7afa8a` |
@@ -138,3 +150,4 @@
 | M3.2.5 | （未 tag） | `931e7cf` |
 | M3.3 v2 | `m3.3-pure-python-rsa` | `4d62088` |
 | M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
+| M3.5.1 | `m3.5-fec-pure-python`（待打） | `ae2a28a` |
