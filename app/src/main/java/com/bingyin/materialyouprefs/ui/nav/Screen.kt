@@ -7,6 +7,7 @@ sealed class Screen(val route: String) {
     data object Home : Screen("home")
     data object Feature : Screen("feature")
     data object Settings : Screen("settings")
+    data object Terminal : Screen("terminal")
     data object Detail : Screen("detail/{itemId}") {
         fun createRoute(itemId: String) = "detail/$itemId"
     }

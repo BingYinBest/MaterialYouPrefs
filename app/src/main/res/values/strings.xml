@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">MaterialYou Prefs</string>
-</resources>
+<!--
+  M5 cleanup: `app_name` was flagged by lint UnusedResources. The app
+  title is rendered as a hardcoded string in the Compose toolbar (no
+  AndroidX-AppCompatActivity binding), so the platform-side app_name
+  resource is dead code. Kept as an empty <resources> root.
+-->
+<resources />

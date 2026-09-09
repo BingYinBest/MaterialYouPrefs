@@ -2,52 +2,161 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'feat/**'
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+  create:
+    tags: [ 'v*' ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-    - name: Install SDK components
-      run: |
-        sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses || true
 
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v4
-      with:
-        gradle-version: '8.7'
+      - name: Install SDK components
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-    - name: Accept Android SDK licenses
-      run: |
-        yes | sdkmanager --licenses || true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-    - name: Generate Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.7 --distribution-type bin
+      # --- v1.0.0-avbtool.1 CI fix ---
+      # The original setup used `gradle <task> 2>&1 | tee log.log` with
+      # `continue-on-error: true`. Two independent bugs made failures
+      # invisible:
+      #   (a) `tee` returns 0 even when `gradle` failed, so the shell
+      #       exit code of the pipeline was always 0.
+      #   (b) `continue-on-error: true` turned even a real non-zero exit
+      #       into a green step.
+      # Result: CI could show `success` while the build was actually
+      # FAILED (no APK, no lint report). We caught this when a user
+      # installed the APK from a "green" run and got a Python runtime
+      # crash.
+      #
+      # Fix: use `set -o pipefail` + `${PIPESTATUS[0]}` to propagate the
+      # real gradle exit code, drop `continue-on-error`, and let the
+      # default step failure behaviour mark the job as failed. The
+      # `if: failure()` step below still runs to dump the log tails.
+      - name: Build Debug APK
+        id: build
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      - name: Build Release APK
+        id: build_release
+        run: |
+          set -o pipefail
+          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee build-release.log
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug --no-daemon
+      - name: Run unit tests
+        id: test
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
 
-    - name: Upload APK artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: materialyou-prefs-debug-apk
-        path: app/build/outputs/apk/debug/app-debug.apk
-        retention-days: 30
+      # Lint is a blocking gate since M5 baseline was cleared to 0/0.
+      - name: Run lint (blocking)
+        id: lint
+        run: |
+          set -o pipefail
+          gradle lintDebug --no-daemon 2>&1 | tee lint.log
+
+      # Summary: surface lint result in the PR check, so we can triage
+      # without needing to dig through the whole log.
+      #
+      # PARSING CAUTION: `run: |` is a YAML literal block scalar. Every
+      # line inside MUST be indented (>= 10 spaces here). If any line
+      # drops to column 0 (a common paste/formatting bug), the whole
+      # workflow fails to parse and the run terminates instantly with
+      # zero jobs / zero artifacts -- that's the failure signature.
+      - name: Summarize lint results
+        if: always()
+        run: |
+          echo "### Lint summary" >> "$GITHUB_STEP_SUMMARY"
+          XML="app/build/reports/lint-results-debug.xml"
+          HTML="app/build/reports/lint-results-debug.html"
+          if [ ! -f "$XML" ]; then
+            echo "lint XML not produced -- lint step probably failed early" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -20 lint.log 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "(no lint.log)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          total=$(grep -oE '<issue[^>]*' "$XML" | wc -l)
+          fatal=$(grep -oE '<issue[^>]*severity="Fatal"' "$XML" | wc -l)
+          errors=$(grep -oE '<issue[^>]*severity="Error"' "$XML" | wc -l)
+          warns=$(grep -oE '<issue[^>]*severity="Warning"' "$XML" | wc -l)
+          {
+            echo "| severity | count |"
+            echo "|----------|-------|"
+            echo "| Fatal    | $fatal |"
+            echo "| Error    | $errors |"
+            echo "| Warning  | $warns |"
+            echo "| **Total**    | **$total** |"
+            echo ""
+            echo "Top 15 lint IDs (by frequency):"
+            grep -oE 'id="[A-Z][A-Za-z]+"' "$XML" | sort | uniq -c | sort -rn | head -15
+            echo ""
+            echo "HTML report: $HTML"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-logs
+          path: |
+            build.log
+            build-release.log
+            test.log
+            lint.log
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+            app/build/reports/lint-results-debug.xml
+            app/build/outputs/lint-results-debug/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload APK artifacts (debug + release)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+          if-no-files-found: error

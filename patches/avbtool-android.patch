@@ -1,0 +1,187 @@
+--- a/app/src/main/python/avbtool.py
++++ b/app/src/main/python/avbtool.py
+@@ -37,6 +37,17 @@
+ import tempfile
+ import time
+ 
++# M3.3 v2: pure-Python RSA helpers. Replaces 4 `openssl` subprocess
++# calls that would otherwise require the openssl binary (not present
++# on Android) or a `cryptography` wheel (not in Chaquopy's pypi-13.1
++# mirror). See `avb_rsa.py` and `docs/tech/AOSP_PATCH.md`.
++import avb_rsa
++
++# M3.5 FEC: pure-Python RS(255, 253) encoder. Replaces 2 `fec` subprocess
++# calls that would otherwise require the Android libfec binary (not
++# present on Android). See `avb_fec.py` and `docs/tech/AOSP_PATCH.md`.
++import avb_fec
++
+ # Keep in sync with libavb/avb_version.h.
+ AVB_VERSION_MAJOR = 1
+ AVB_VERSION_MINOR = 2
+@@ -366,33 +377,19 @@
+     # but unfortunately PyCrypto is not available in the builder. So
+     # instead just parse openssl(1) output to get this
+     # information. It's ugly but...
+-    args = ['openssl', 'rsa', '-in', key_path, '-modulus', '-noout']
+-    p = subprocess.Popen(args,
+-                         stdin=subprocess.PIPE,
+-                         stdout=subprocess.PIPE,
+-                         stderr=subprocess.PIPE)
+-    (pout, perr) = p.communicate()
+-    if p.wait() != 0:
+-      # Could be just a public key is passed, try that.
+-      args.append('-pubin')
+-      p = subprocess.Popen(args,
+-                           stdin=subprocess.PIPE,
+-                           stdout=subprocess.PIPE,
+-                           stderr=subprocess.PIPE)
+-      (pout, perr) = p.communicate()
+-      if p.wait() != 0:
+-        raise AvbError('Error getting public key: {}'.format(perr))
+-
+-    if not pout.lower().startswith(self.MODULUS_PREFIX):
+-      raise AvbError('Unexpected modulus output')
+-
+-    modulus_hexstr = pout[len(self.MODULUS_PREFIX):]
++    # M3.3 v2: parse modulus directly from the PEM/DER key file using the
++    # pure-Python RSA module. Handles both private and public keys,
++    # PKCS#8 and traditional RSAPrivateKey, without shelling out to
++    # openssl(1).
++    try:
++      self.modulus = avb_rsa.parse_modulus(key_path)
++    except (ValueError, OSError) as e:
++      raise AvbError('Error getting public key: {}'.format(e))
+ 
+     # The exponent is assumed to always be 65537 and the number of
+     # bits can be derived from the modulus by rounding up to the
+     # nearest power of 2.
+     self.key_path = key_path
+-    self.modulus = int(modulus_hexstr, 16)
+     self.num_bits = round_to_pow2(int(math.ceil(math.log(self.modulus, 2))))
+     self.exponent = 65537
+ 
+@@ -480,16 +477,16 @@
+             stdout=subprocess.PIPE,
+             stderr=subprocess.PIPE)
+       else:
+-        p = subprocess.Popen(
+-            ['openssl', 'rsautl', '-sign', '-inkey', self.key_path, '-raw'],
+-            stdin=subprocess.PIPE,
+-            stdout=subprocess.PIPE,
+-            stderr=subprocess.PIPE)
+-      (pout, perr) = p.communicate(padding_and_hash)
+-      retcode = p.wait()
+-      if retcode != 0:
+-        raise AvbError('Error signing: {}'.format(perr))
+-      signature = pout
++        # M3.3 v2: pure-Python RSA private-key signature. `padding_and_hash`
++        # is already the PKCS#1 v1.5 padded EM built from algorithm.padding
++        # + digest, so this is a straight modular exponentiation.
++        try:
++          _n, _e, _d = avb_rsa.parse_key_file(self.key_path)
++          if _d is None:
++            raise ValueError('key file does not contain a private key')
++          signature = avb_rsa.rsa_sign_raw(_d, _n, padding_and_hash)
++        except Exception as e:
++          raise AvbError('Error signing: {}'.format(e))
+     if len(signature) != algorithm.signature_num_bytes:
+       raise AvbError('Error signing: Invalid length of signature')
+     return signature
+@@ -600,46 +597,12 @@
+   #
+   # but since 'avbtool verify_image' is used on the builders we don't want
+   # to rely on Crypto.PublicKey.RSA. Instead just use openssl(1) to verify.
+-  asn1_str = ('asn1=SEQUENCE:pubkeyinfo\n'
+-              '\n'
+-              '[pubkeyinfo]\n'
+-              'algorithm=SEQUENCE:rsa_alg\n'
+-              'pubkey=BITWRAP,SEQUENCE:rsapubkey\n'
+-              '\n'
+-              '[rsa_alg]\n'
+-              'algorithm=OID:rsaEncryption\n'
+-              'parameter=NULL\n'
+-              '\n'
+-              '[rsapubkey]\n'
+-              'n=INTEGER:{}\n'
+-              'e=INTEGER:{}\n').format(hex(modulus).rstrip('L'),
+-                                       hex(exponent).rstrip('L'))
+-
+-  with tempfile.NamedTemporaryFile() as asn1_tmpfile:
+-    asn1_tmpfile.write(asn1_str.encode('ascii'))
+-    asn1_tmpfile.flush()
+-
+-    with tempfile.NamedTemporaryFile() as der_tmpfile:
+-      p = subprocess.Popen(
+-          ['openssl', 'asn1parse', '-genconf', asn1_tmpfile.name, '-out',
+-           der_tmpfile.name, '-noout'])
+-      retcode = p.wait()
+-      if retcode != 0:
+-        raise AvbError('Error generating DER file')
+-
+-      p = subprocess.Popen(
+-          ['openssl', 'rsautl', '-verify', '-pubin', '-inkey', der_tmpfile.name,
+-           '-keyform', 'DER', '-raw'],
+-          stdin=subprocess.PIPE,
+-          stdout=subprocess.PIPE,
+-          stderr=subprocess.PIPE)
+-      (pout, perr) = p.communicate(sig_blob)
+-      retcode = p.wait()
+-      if retcode != 0:
+-        raise AvbError('Error verifying data: {}'.format(perr))
+-      if pout != padding_and_digest:
+-        sys.stderr.write('Signature not correct\n')
+-        return False
++  # M3.3 v2: verify directly with pure-Python RSA. Replaces the prior
++  # `openssl asn1parse -genconf` + `openssl rsautl -verify` two-step
++  # flow that required the openssl binary on the host.
++  if not avb_rsa.rsa_verify_raw(modulus, exponent, padding_and_digest, sig_blob):
++    sys.stderr.write('Signature not correct\n')
++    return False
+   return True
+ 
+ 
+@@ -4051,15 +4014,9 @@
+   Raises:
+     ValueError: If output from the 'fec' tool is invalid.
+   """
+-  p = subprocess.Popen(
+-      ['fec', '--print-fec-size', str(image_size), '--roots', str(num_roots)],
+-      stdout=subprocess.PIPE,
+-      stderr=subprocess.PIPE)
+-  (pout, perr) = p.communicate()
+-  retcode = p.wait()
+-  if retcode != 0:
+-    raise ValueError('Error invoking fec: {}'.format(perr))
+-  return int(pout)
++  # M3.5: pure-Python RS encoder. Same formula as libfec's
++  # `fec_ecc_get_size()` (see ecc.h). No subprocess call to `fec` needed.
++  return avb_fec.fec_data_size(image_size, num_roots)
+ 
+ 
+ def generate_fec_data(image_filename, num_roots):
+@@ -4075,16 +4032,15 @@
+   Raises:
+     ValueError: If calling the 'fec' tool failed or the output is invalid.
+   """
+-  with tempfile.NamedTemporaryFile() as fec_tmpfile:
+-    try:
+-      subprocess.check_call(
+-          ['fec', '--encode', '--roots', str(num_roots), image_filename,
+-           fec_tmpfile.name],
+-          stderr=open(os.devnull, 'wb'))
+-    except subprocess.CalledProcessError as e:
+-      raise ValueError('Execution of \'fec\' tool failed: {}.'
+-                       .format(e)) from e
+-    fec_data = fec_tmpfile.read()
++  # M3.5: pure-Python RS encoder. Reads the image file, computes parity
++  # bytes with a valid FEC footer, and returns just the parity portion
++  # (matching what the Android `fec` binary would have produced).
++  try:
++    with open(image_filename, 'rb') as f:
++      input_bytes = f.read()
++    fec_data = avb_fec.encode_fec_buffer(input_bytes, num_roots)
++  except (OSError, ValueError) as e:
++    raise ValueError('Execution of FEC encoder failed: {}'.format(e)) from e
+ 
+   footer_size = struct.calcsize(FEC_FOOTER_FORMAT)
+   footer_data = fec_data[-footer_size:]
