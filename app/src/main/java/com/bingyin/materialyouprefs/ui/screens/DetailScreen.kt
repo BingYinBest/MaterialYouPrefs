@@ -1,6 +1,6 @@
-package com.bingyin.materialyouprefs.ui.screens
-
 @file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.bingyin.materialyouprefs.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
