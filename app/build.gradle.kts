@@ -11,9 +11,11 @@ plugins {
 // `keystores/dev.keystore`. Every CI build signs with the same key, so
 // users can install-over-upgrade without uninstalling first.
 //
-// NOTE: keystore passwords are hardcoded because this is a *debug/dev*
-// keystore that only ever appears in a public repo. Never use this pattern
-// for release builds — put release keystore in CI Secrets instead.
+// M5 decision (v1.0.0-avbtool): ship with this keystore. The repo is a
+// fork-friendly open-source tool intended for GitHub Release distribution,
+// not Google Play; a shared signing key is an accepted trade-off for
+// zero-config installability. If Play ever becomes a target, move to a
+// CI-Secrets-backed release keystore.
 val devKeystoreFile: File = rootProject.file("keystores/dev.keystore")
 val devKeystoreStorePass: String = "avbtool-dev-store"
 val devKeystoreAlias: String = "avbtool-dev"
@@ -56,8 +58,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Release also uses the dev keystore for now. Replace with a
-            // CI-Secret-backed release keystore before shipping.
+            // M5: release uses the dev keystore. See the top-of-file note
+            // for the M5 sign-off on this trade-off.
             signingConfig = signingConfigs.getByName("devFixed")
         }
     }
@@ -76,6 +78,33 @@ android {
         resources.excludes += "META-INF/INDEX.LIST"
         resources.excludes += "META-INF/io.netty.versions.properties"
         resources.excludes += "META-INF/AL2.0/LICENSE"
+    }
+
+    // M5 lint baseline: strip the four detectors that only fire on
+    // version-upgrade suggestions and platform-scope preferences, neither
+    // of which is a defect we should block the build on today.
+    //
+    //   - GradleDependency + AndroidGradlePluginVersion: warn on any
+    //     pinned version that isn't the newest. Upgrading AGP 8.5 -> 9.4
+    //     or Compose BOM 2024.09.02 -> 2026.08.00 would break the build
+    //     and is out of scope for the v1.0.0-avbtool cut.
+    //   - OldTargetApi: we deliberately pin targetSdk = 35 (Android 15)
+    //     to match the compileSdk; bumping requires another regression
+    //     pass.
+    //   - ChromeOsAbiSupport: we don't ship x86_64; avbtool's Python
+    //     runtime and FEC encoder are arm64-only.
+    //
+    // fatal = "Error" means lint failures block the build only on real
+    // findings (Error severity); warnings are informational.
+    lint {
+        disable += listOf(
+            "GradleDependency",
+            "AndroidGradlePluginVersion",
+            "OldTargetApi",
+            "ChromeOsAbiSupport",
+        )
+        fatal += setOf("Error")
+        abortOnError = true
     }
 }
 
