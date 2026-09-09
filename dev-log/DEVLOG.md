@@ -12,6 +12,19 @@
 
 ## 2026-09-09
 
+### 21:14 — M3.4 完成，Run 163 绿（`8eecab3`）
+
+**fetchHelp 真实现**。两个 commit：
+- `c48ff81` `python_main.py` 加 `__help__` 虚拟命令：`{"commandName": "__help__", "args": ["<subcmd>"]}` → dispatch 到 `<subcmd> --help`，返回 argparse help 文本
+- `8eecab3` `AvbToolRunnerImpl.fetchHelp()` 从空实现改成真的调 `python_main.run` + `__help__` 命令，然后管道到 `AvbHelpParser.parse()` 返回 `List<CommandParam>`
+
+**效果**：
+- `CommandRepository.getByIdOrFetch()` 现在能真正从 avbtool 拉参数元数据
+- Room 里 `paramsJson` 24h 后不再靠种子，而是从 --help 输出刷新
+- 失败不抛异常，返回 `emptyList()` 让调用方 fallback
+
+**下一步**：M3.3 v2（纯 Python RSA）或 M3.5（SAF 桥 + FEC）。
+
 ### 21:44 — M3.3 v1 失败复盘 + 签名固定完成，Run 151 绿
 
 **当前 HEAD**：`931e7cf`。签名固定完成，M3.3 openssl→cryptography patch 因依赖不可用而**回滚**。
@@ -45,8 +58,6 @@ FileNotFoundError: [Errno 2] No such file or directory: 'maturin'
 - `build.gradle.kts` 加 `signingConfigs { devFixed { storeFile = "keystores/dev.keystore" } }`，debug/release 都指向它
 - 参数硬编码在 build.gradle.kts：store=`avbtool-dev-store` / alias=`avbtool-dev`
 - **警告**：这是 dev keystore，公开到 repo。**将来 release 一定走 CI Secrets**，不能把 release keystore 提交到 repo
-
-**下一步**：M3.3 v2 纯 Python RSA（`avb_rsa.py`，~200 行，无外部依赖），或先做 M3.4/M3.5。
 
 ### 21:20 — M3.2 交付 + 文档体系完善
 
