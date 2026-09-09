@@ -12,6 +12,28 @@
 
 ## 2026-09-09
 
+### 22:45 — M3.3 v2 完成，纯 Python RSA 落地（`4d62088`）
+
+**4 处 openssl subprocess 已全部替换**。两个 commit（助手推）+ 一个 Web UI 上传（用户）：
+- `296c0bf` `app/src/main/python/avb_rsa.py`（241 行，纯 Python RSA，零外部依赖）
+- `fdb209e` `patches/avbtool-android.patch`（137 行，4 处 hunk）
+- `4d62088` 用户 Web UI 上传 patched `avbtool.py`（md5 `fb692416...`）
+
+**实现路径**（不依赖 `cryptography`、不需要系统 openssl）：
+- `RSA.__init__` 用 `avb_rsa.parse_modulus(key_path)` 直接解析 PEM/DER 里的模数
+- `sign()` 用 `pow(int.from_bytes(em,'big'), d, n)` + `.to_bytes()` 生成签名
+- `verify_vbmeta_signature()` 用 `pow(int.from_bytes(sig,'big'), e, n)` 反解后逐字节比对
+- DER 解析自己写：`_read_len`/`_read_seq`/`_read_int`/`_read_octet_string` + 第 2 元素 tag 区分 PKCS#8 vs 传统 RSAPrivateKey
+
+**本地互验**（openssl 生成的基准签名 vs 我方 Python 签名）：
+- ✅ `openssl genrsa 2048` + `openssl rsautl -sign -raw` 输出 == 我方 `rsa_sign_raw` 输出（逐字节一致）
+- ✅ 我方 `rsa_verify_raw` 正确接受 openssl 签名
+- ✅ 篡改任意 1 字节后正确拒绝
+- ✅ `py_compile` avbtool.py + avb_rsa.py 通过
+- ✅ `patch avbtool_orig.py < avbtool-android.patch` 应用后 md5 与远端 patched 版一致
+
+**下一步**：等 CI 绿 → 打 tag `m3.3-pure-python-rsa` → M3.5（SAF 桥 + FEC NDK）。
+
 ### 21:14 — M3.4 完成，Run 163 绿（`8eecab3`）
 
 **fetchHelp 真实现**。两个 commit：
@@ -51,7 +73,7 @@ FileNotFoundError: [Errno 2] No such file or directory: 'maturin'
 - `https://chaquo.com/pypi-13.1/` **不 mirror** cryptography（curl 验证 HTTP 404）
 - 只能拉 sdist，sdist 用 `maturin`（Rust）做 build backend，GitHub runner 没装
 
-**教训**：Python 密码学库要优先评估「Android arm64 wheel 是否可用」。没有 wheel 就要考虑纯 Python 实现（`pow(a,d,n)` 就是可行的路径）。
+**教训**：Python 密码学库要优先评估「Android arm64 wheel 是否可用」。没有 wheel 就直接上纯 Python（`pow(a,d,n)` 就够用）。
 
 **签名固定**：
 - 新增 `keystores/dev.keystore`（2754 B, PKCS12, RSA-2048, `CN=AvbTool Dev`, 有效期 10000 天）
@@ -112,16 +134,12 @@ Run 93 绿，`e223168`。Home 4 卡片（版本 / 终端入口 / 常用命令 / 
 
 ## 2026-09-08
 
-### 21:10 — 建 `/sdcard/Download/M32_upload/` 目录，放 avbtool.py 供用户下载
+### 21:10 — 建 `/sdcard/Download/M32_upload/` 上传目录
 
-### 20:55 — Run 96 失败排错：Chaquopy 15 Python API 变了
-
-### 20:48 — Run 95 失败：`libs.chaquopy.python` 别名解析失败
-
-### 20:41 — Run 94 失败：Chaquopy 15 DSL 错误（`defaultVersion/sourceDirs/python/cryptography` 全部 Unresolved）
-
-### 19:30 — M3.1 推送第一版（`4ceb0559`）
+用户上传 avbtool.py（见 09-09 21:17 条目）。
 
 ---
 
-（更早的历史记录见 `CHANGELOG.md`）
+## 2026-09-08（M3 之前的历史）
+
+M2 / M2.5 / M2.6+ 详细动作见 `dev-log/CHANGELOG.md`。
