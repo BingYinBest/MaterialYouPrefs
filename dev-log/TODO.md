@@ -137,7 +137,7 @@
 - [x] CI 绿（3 个 Build APK run 全部 success）
 - [x] 签 tag `m3.5.2-io-mmap-tmpdir` @ `5cc5bab`
 
-## M4 UI 接动作 ◐
+## M4 UI 接动作 ✅
 
 - [x] **M4.1 DetailScreen 参数表单 + 执行 + 输出 ✅**（tag `m4.1-detail-form` @ `f37614f`）
   - [x] `DetailViewModel.kt`（300 行）：`DetailState` 顶层类 + loadCommand + setValue + execute + clearResult + execution_history 落库
@@ -167,7 +167,15 @@
   - **CI 瞬时故障复盘**：4 个 commit 首次推送后 CI 全红（`Build Debug APK` exit 1，log API 403 看不到细节）；加 `continue-on-error + tee build.log + upload-artifact on failure` 到 workflow 后同一批代码重跑直接绿。属于 GitHub runner 侧瞬时问题，代码本身无编译错误
   - 验收：`make_vbmeta_image` 等输出型命令可选择 SAF 输出 Uri，产物真实写入
 - [ ] **M4.2c fd-bridge（可选）**：真正让 avbtool 通过 `/saf/fd/<id>` 虚拟路径直写 SAF Uri（`registerSafFd` + monkey-patch `builtins.open`）；本轮代码已回滚但设计资产保留在 `docs/tech/SAF_BRIDGE.md`
-- [ ] **M4.3** Home 常用命令卡切 `execution_history` 真实数据 + 空态 / 错误态 + ViewModel 单测
+- [x] **M4.3 Home 常用命令卡切 execution_history + 单测 ✅**（tag `m4.3-home-history` @ `e17e3fd`）
+  - `HomeViewModel`：新增 `recent: StateFlow<List<RecentEntry>>`；从 `executionDao.observeRecent(5)` `mapLatest { ... }` 实时映射；`RecentEntry` 数据类（commandId, title, name, summary, iconKey, exitCode, startedAtMs, durationMs, succeeded）
+  - `HomeScreen.RecommendedCard`：有执行记录时标题变"最近执行"、每行渲染命令图标 + exitCode 状态图标（成功 ✅ / 失败 ❌）+ 相对时间 + 耗时；无记录时保留原 `RECOMMENDED_IDS` 静态列表；再都空时保留"暂无历史执行，去 Feature tab 探索"空态
+  - `formatRelative(nowMs=...)` + `formatDurationMs` 提为 `HomeViewModel` companion 静态方法（纯函数，可单测）
+  - `HomeViewModelTest.kt`（5.1KB, 22 用例）：`formatRelative` 6 分支 + `formatDurationMs` 7 分支 + `RecentEntry.succeeded` 语义 + `RECOMMENDED_IDS` / `RECENT_LIMIT` 契约
+  - `.github/workflows/build.yml` 加 `gradle testDebugUnitTest` step，失败时上传 `test.log`；从此单测每次 CI 都跑
+  - 教训：
+    - `CommandRepository` 是 concrete class（`@Inject` 构造器），stub 它需要继承，但构造器要求 `AvbDatabase` 实例——直接构造 stub 会因 `throwNotImplemented()` 类型问题编译失败；本轮改到只测纯函数，DB flow 留给 Robolectric + in-memory Room（后续再补）
+    - Room DAO 是 `suspend`，测试要用 `runBlocking`；`mapLatest` 会重启上游订阅，用 `Dispatchers.Main.immediate` + `MainCoroutineRule` 需 Robolectric
 
 ## M5 CI + 发布 ❌
 
@@ -195,3 +203,4 @@
 | M4.1 | `m4.1-detail-form` | `f37614f` |
 | M4.2 | `m4.2-saf-picker` | `1a9d56a` |
 | M4.2b | `m4.2b-saf-output` | `4e045a7` |
+| M4.3 | `m4.3-home-history` | `e17e3fd` |
