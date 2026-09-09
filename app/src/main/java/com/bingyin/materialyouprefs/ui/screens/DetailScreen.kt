@@ -438,9 +438,23 @@ private fun ChoiceRow(
 
 @Composable
 private fun OutputSection(result: AvbExecutionResult) {
-    val (stdout, stderr, exitCode, isError) = when (result) {
-        is AvbExecutionResult.Success -> (result.stdout, result.stderr, result.exitCode, false)
-        is AvbExecutionResult.Failure -> ("", "[${result.errorCode}] ${result.message}", -1, true)
+    val stdout: String
+    val stderr: String
+    val exitCode: Int
+    val isError: Boolean
+    when (result) {
+        is AvbExecutionResult.Success -> {
+            stdout = result.stdout
+            stderr = result.stderr
+            exitCode = result.exitCode
+            isError = false
+        }
+        is AvbExecutionResult.Failure -> {
+            stdout = ""
+            stderr = "[${result.errorCode}] ${result.message}"
+            exitCode = -1
+            isError = true
+        }
     }
     ElevatedCard(
         shape = RoundedCornerShape(12.dp),
