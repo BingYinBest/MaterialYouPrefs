@@ -35,6 +35,14 @@ data class DetailState(
     val command: CommandDefinition? = null,
     val params: List<CommandParam> = emptyList(),
     val inputValues: Map<String, String> = emptyMap(),
+    /**
+     * SAF Uri selected per parameter name. Populated by
+     * [DetailViewModel.setInputUri] when the user picks a file for a
+     * FILE/PATH param via the SAF picker. [execute] will stage each Uri
+     * to a local path (via [AvbToolRunner.stageInput]) before invoking
+     * the Python runner.
+     */
+    val inputUris: Map<String, Uri> = emptyMap(),
     val isRunning: Boolean = false,
     val lastResult: AvbExecutionResult? = null,
     val status: String = "加载中…",
@@ -42,7 +50,7 @@ data class DetailState(
 )
 
 /**
- * ViewModel for the Detail screen (M4.1).
+ * ViewModel for the Detail screen.
  *
  * Responsibilities:
  *   1. Load the [CommandDefinition] for the target [commandId] via
@@ -50,14 +58,16 @@ data class DetailState(
  *      from `avbtool <cmd> --help` when the cache is stale).
  *   2. Surface the parsed [CommandParam] list to the UI so it can render
  *      a dynamic form.
- *   3. On `execute()`, expand user input into an ordered `args` list in the
- *      `--flag=value` shape argparse expects, build an [AvbExecutionRequest],
- *      call [AvbToolRunner.run], and record the outcome to
- *      `execution_history`.
+ *   3. On `execute()`, stage any SAF [Uri] inputs to local temp files
+ *      (M4.2), expand user input into an ordered `args` list in the
+ *      `--flag=value` shape argparse expects, build an
+ *      [AvbExecutionRequest], call [AvbToolRunner.run], and record the
+ *      outcome to `execution_history`.
  *
- * M4.2 will add SAF picker plumbing (inputUris / outputUri) and M3.5.2b
- * fd-bridge; this milestone leaves those inputs empty and the runner uses
- * its copy-through-tempfile path.
+ * The fd-bridge (M3.5.2b) — letting avbtool write directly to a SAF
+ * output Uri via a `/saf/fd/<id>` virtual path — is intentionally
+ * deferred; the current runner still uses its copy-through-tempfile
+ * path for outputs.
  */
 class DetailViewModel(
     private val repository: CommandRepository,
@@ -124,6 +134,29 @@ class DetailViewModel(
     }
 
     /**
+     * Set a SAF Uri for a specific parameter. The Uri is stored alongside
+     * [DetailState.inputValues] but is NOT what gets expanded to argv —
+     * [execute] stages each such Uri to a local temp file via
+     * [AvbToolRunner.stageInput] and substitutes the resulting path into
+     * the corresponding parameter slot in [AvbExecutionRequest.args].
+     *
+     * @param paramName param name (e.g. "key_out_path"); must exist in
+     *                  [CommandParam.name]
+     * @param uri       Uri from `ActivityResultContracts.OpenDocument()`
+     */
+    fun setInputUri(paramName: String, uri: Uri) {
+        val current = _state.value
+        if (current.isRunning) return
+        _state.value = current.copy(
+            inputUris = current.inputUris + (paramName to uri),
+            // Keep the Uri string visible in the inputValues map so the
+            // UI can echo "已选择: …" — execute() will override with the
+            // staged local path before running.
+            inputValues = current.inputValues + (paramName to uri.toString()),
+        )
+    }
+
+    /**
      * Validate + execute the currently form-filled parameters.
      *
      * Validation: every param with `required=true` must have a non-blank
@@ -132,12 +165,19 @@ class DetailViewModel(
      * not fail the run on non-required-but-blank params — those are simply
      * omitted from the CLI argv.
      *
-     * @param inputUris  SAF URIs for input files (M4.2 will populate; M4.1
-     *                   always passes the empty list).
-     * @param outputUri  Optional SAF Uri for output (M4.2).
+     * SAF handling (M4.2):
+     *   - If any parameter appears in [DetailState.inputUris], call
+     *     [AvbToolRunner.stageInput] on that Uri (background thread) to
+     *     copy the file into `cacheDir/avbtool-in-*.<ext>` and substitute
+     *     the resulting local path into the args slot.
+     *   - [outputUri] is currently unused by avbtool runner; the Python
+     *     side writes into its own tmpdir. promoteToOutput is left to a
+     *     later milestone (fd-bridge in M3.5.2b) that lets avbtool write
+     *     directly to a SAF Uri via a `/saf/fd/<id>` virtual path.
+     *
+     * @param outputUri  Ignored for now (M4.2b will plumb through).
      */
     fun execute(
-        inputUris: List<Uri> = emptyList(),
         outputUri: Uri? = null,
     ) {
         val current = _state.value
@@ -149,6 +189,7 @@ class DetailViewModel(
         }
         val params = current.params
         val values = current.inputValues
+        val safUris = current.inputUris
 
         // Required-param check.
         for (p in params) {
@@ -163,47 +204,64 @@ class DetailViewModel(
             }
         }
 
-        // Expand params into argv tokens in `--flag=value` shape.
-        //
-        // argparse accepts `--opt=value` and `--opt value` interchangeably,
-        // so this keeps argv short and quote-safe. Boolean flags are
-        // emitted as bare `--flag` when the user's value is truthy and
-        // dropped entirely otherwise (argparse's `action='store_true'`
-        // would reject `--flag=False`).
-        val args = buildList {
-            for (p in params) {
-                val raw = values[p.name]?.takeIf { it.isNotBlank() } ?: p.default?.takeIf { it.isNotBlank() }
-                if (raw == null) continue
-                when (p.type) {
-                    ParamType.BOOLEAN -> {
-                        when (raw.lowercase()) {
-                            "true", "1", "yes", "on" -> add(p.name)
-                            else -> Unit // flag off → omit
-                        }
-                    }
-                    else -> add("${p.name}=$raw")
-                }
-            }
-        }
-
-        val request = AvbExecutionRequest(
-            commandId = cmd.id,
-            args = args,
-            params = values,
-            inputUris = inputUris,
-            outputUri = outputUri,
-        )
-
+        val startedAt = System.currentTimeMillis()
         _state.value = current.copy(
             isRunning = true,
-            status = "执行中：${cmd.name} …",
+            status = "准备输入文件…",
             error = null,
             lastResult = null,
         )
 
-        val startedAt = System.currentTimeMillis()
         vmScope.launch {
             val result: AvbExecutionResult = try {
+                // Stage each SAF Uri to a local temp file, then override
+                // the inputValues slot for that param so argv carries the
+                // real path (not the Uri string).
+                val stagedPaths = mutableMapOf<String, String>()
+                for ((name, uri) in safUris) {
+                    val localPath = runner.stageInput(uri)
+                    stagedPaths[name] = localPath
+                }
+                val resolvedValues = values + stagedPaths
+
+                // Expand params into argv tokens in `--flag=value` shape.
+                //
+                // argparse accepts `--opt=value` and `--opt value`
+                // interchangeably, so this keeps argv short and
+                // quote-safe. Boolean flags are emitted as bare `--flag`
+                // when the user's value is truthy and dropped entirely
+                // otherwise (argparse's `action='store_true'` would
+                // reject `--flag=False`).
+                val args = buildList {
+                    for (p in params) {
+                        val raw = resolvedValues[p.name]
+                            ?.takeIf { it.isNotBlank() }
+                            ?: p.default?.takeIf { it.isNotBlank() }
+                        if (raw == null) continue
+                        when (p.type) {
+                            ParamType.BOOLEAN -> {
+                                when (raw.lowercase()) {
+                                    "true", "1", "yes", "on" -> add(p.name)
+                                    else -> Unit // flag off → omit
+                                }
+                            }
+                            else -> add("${p.name}=$raw")
+                        }
+                    }
+                }
+
+                val request = AvbExecutionRequest(
+                    commandId = cmd.id,
+                    args = args,
+                    params = resolvedValues,
+                    inputUris = safUris.values.toList(),
+                    outputUri = outputUri,
+                )
+
+                _state.value = _state.value.copy(
+                    status = "执行中：${cmd.name} …",
+                )
+
                 runner.run(request)
             } catch (t: Throwable) {
                 AvbExecutionResult.Failure(
@@ -212,6 +270,7 @@ class DetailViewModel(
                     cause = t,
                 )
             }
+
             val duration = System.currentTimeMillis() - startedAt
 
             // Persist to execution_history so the Home card can show real
@@ -237,7 +296,7 @@ class DetailViewModel(
                         },
                         startedAtMs = startedAt,
                         durationMs = duration,
-                        inputFiles = inputUris.joinToString(","),
+                        inputFiles = safUris.values.joinToString(",") { it.toString() },
                         outputFiles = outputUri?.toString() ?: "",
                     ),
                 )
