@@ -46,19 +46,27 @@ jobs:
         continue-on-error: true
         run: gradle assembleDebug --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
 
-      - name: Upload build.log on failure
-        if: failure() || steps.build.outcome == 'failure'
+      - name: Run unit tests
+        id: test
+        continue-on-error: true
+        run: gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+
+      - name: Upload logs on failure
+        if: failure() || steps.build.outcome == 'failure' || steps.test.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-build-log
+          name: gradle-logs
           path: |
             build.log
-            **/build.gradle.kts
+            test.log
           retention-days: 7
 
-      - name: Fail build if step failed
-        if: steps.build.outcome == 'failure'
-        run: exit 1
+      - name: Fail build if any step failed
+        if: steps.build.outcome == 'failure' || steps.test.outcome == 'failure'
+        run: |
+          echo "Build outcome: ${steps.build.outcome}"
+          echo "Test outcome:  ${steps.test.outcome}"
+          exit 1
 
       - name: Upload APK artifact
         if: success()
