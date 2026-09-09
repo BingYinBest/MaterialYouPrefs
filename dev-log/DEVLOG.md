@@ -12,6 +12,42 @@
 
 ## 2026-09-09
 
+### 21:44 — M3.3 v1 失败复盘 + 签名固定完成，Run 151 绿
+
+**当前 HEAD**：`931e7cf`。签名固定完成，M3.3 openssl→cryptography patch 因依赖不可用而**回滚**。
+
+**本轮 11 个 commit**（含 Web UI 试错）：
+- `6f37aa0` `pip { install("cryptography==43.0.1") }` 加进 build.gradle.kts
+- `6507c8d` 用户 Web UI 上传 patched avbtool.py（cryptography 版）
+- `f8237d6` 撤回 cryptography + 加固定 `signingConfig { devFixed }` 指向 `keystores/dev.keystore`
+- 若干 Web UI 中间态（Create keystores / Delete keystores / 试错上传）
+- `a601808` 用户回滚 avbtool.py 到原始版（openssl subprocess 版）
+- `931e7cf` Delete dev.keystore（顶层误传，真正 keystore 在 `keystores/dev.keystore`）
+
+**M3.3 v1 失败根因**（Run 122）：
+
+```
+Looking in indexes: https://pypi.org/simple, https://chaquo.com/pypi-13.1
+Collecting cryptography==43.0.1
+  Downloading cryptography-43.0.1.tar.gz (686 kB)
+Preparing wheel metadata: finished with status 'error'
+FileNotFoundError: [Errno 2] No such file or directory: 'maturin'
+```
+
+- `cryptography` 官方 PyPI 只有 manylinux wheel，**没有 Android arm64-v8a wheel**
+- `https://chaquo.com/pypi-13.1/` **不 mirror** cryptography（curl 验证 HTTP 404）
+- 只能拉 sdist，sdist 用 `maturin`（Rust）做 build backend，GitHub runner 没装
+
+**教训**：Python 密码学库要优先评估「Android arm64 wheel 是否可用」。没有 wheel 就要考虑纯 Python 实现（`pow(a,d,n)` 就是可行的路径）。
+
+**签名固定**：
+- 新增 `keystores/dev.keystore`（2754 B, PKCS12, RSA-2048, `CN=AvbTool Dev`, 有效期 10000 天）
+- `build.gradle.kts` 加 `signingConfigs { devFixed { storeFile = "keystores/dev.keystore" } }`，debug/release 都指向它
+- 参数硬编码在 build.gradle.kts：store=`avbtool-dev-store` / alias=`avbtool-dev`
+- **警告**：这是 dev keystore，公开到 repo。**将来 release 一定走 CI Secrets**，不能把 release keystore 提交到 repo
+
+**下一步**：M3.3 v2 纯 Python RSA（`avb_rsa.py`，~200 行，无外部依赖），或先做 M3.4/M3.5。
+
 ### 21:20 — M3.2 交付 + 文档体系完善
 
 **签名 tag**：`m3.2-avbtool-vendored` @ `10f5802c`
@@ -20,11 +56,6 @@
 - 用户上传 AOSP `avbtool.py`（200 KB, 4935 行, HEAD `386fb904`）到 `app/src/main/python/avbtool.py`
 - `python_main.py` 更新为完整 dispatch：`version` 走本地处理，其他命令 `import avbtool` + argparse 桥
 - CI Run 115 绿
-
-**遗留**：
-- avbtool.py 里的 36 处 `subprocess.call(['openssl', ...])` 尚未 patch → M3.3
-- 未 pip install `cryptography` → M3.3
-- 真实命令（如 `make_vbmeta_image`）在当前状态会因缺 openssl 二进制失败，符合 M3.2 阶段预期
 
 **本轮文档改进**：
 - 新增 `dev-log/DEVLOG.md`（本文件）：日期归档的开发流水账
