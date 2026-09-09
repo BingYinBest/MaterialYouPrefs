@@ -1,5 +1,7 @@
 package com.bingyin.materialyouprefs.ui.screens
 
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,8 +30,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -117,7 +119,7 @@ fun DetailScreen(
 
 @Composable
 private fun CommandExecutionContent(
-    state: DetailViewModel.DetailState,
+    state: DetailState,
     viewModel: DetailViewModel,
     contentPadding: PaddingValues,
 ) {
@@ -336,7 +338,7 @@ private fun ParamRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (param.default?.isBlank() != true && param.default != null) {
+            if (param.default?.isNotBlank() == true) {
                 Text(
                     text = "默认：${param.default}",
                     style = MaterialTheme.typography.bodySmall,
