@@ -51,21 +51,44 @@ jobs:
         continue-on-error: true
         run: gradle testDebugUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
 
+      - name: Run lint (M5 baseline, non-blocking)
+        id: lint
+        continue-on-error: true
+        run: gradle lintDebug --no-daemon 2>&1 | tee lint.log
+
       - name: Upload logs on failure
-        if: failure() || steps.build.outcome == 'failure' || steps.test.outcome == 'failure'
+        if: failure() || steps.build.outcome == 'failure' || steps.test.outcome == 'failure' || steps.lint.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: gradle-logs
           path: |
             build.log
             test.log
+            lint.log
           retention-days: 7
 
-      - name: Fail build if any step failed
+      - name: Upload lint report (M5)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.txt
+            app/build/reports/lint-results-debug.xml
+            app/build/outputs/lint-results-debug/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Fail build if any blocking step failed
+        # Lint is currently non-blocking: we're still surveying the baseline
+        # issue count and will flip this to include steps.lint.outcome once
+        # the lint gate is green in the M5 polish pass.
         if: steps.build.outcome == 'failure' || steps.test.outcome == 'failure'
         run: |
           echo "Build outcome: ${steps.build.outcome}"
           echo "Test outcome:  ${steps.test.outcome}"
+          echo "Lint outcome:  ${steps.lint.outcome}  (informational only)"
           exit 1
 
       - name: Upload APK artifact
