@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.MaterialYouPrefs" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
-    </style>
-</resources>
+<!--
+  M5 cleanup: `Theme.MaterialYouPrefs` was flagged by lint UnusedResources.
+  The app uses full-screen Compose (`setContent { ... }` in
+  MainActivity) with its own MaterialTheme, so no Activity-level
+  theme is referenced. Kept as an empty <resources> root.
+-->
+<resources />
