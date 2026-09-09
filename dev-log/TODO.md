@@ -97,7 +97,7 @@
 
 - [x] `python_main.py` 加 `__help__` 虚拟命令：`{"commandName": "__help__", "args": ["<subcmd>"]}` → dispatch 到 `<subcmd> --help`
 - [x] `fetchHelp` 真实现：Kotlin 侧 `AvbToolRunnerImpl.fetchHelp()` 调 `__help__` 命令 → 管道 `AvbHelpParser.parse()` → 返回 `List<CommandParam>`（commit `8eecab3`）
-- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5.2）
+- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5.2b → M4）
 - [x] 签 tag `m3.4-fetchhelp-real` @ `8eecab3`
 
 ### M3.5.1 FEC 编码 ✅（纯 Python RS，tag `m3.5-fec-pure-python` @ `ae2a28a`）
@@ -112,18 +112,35 @@
 - [x] 签 tag `m3.5-fec-pure-python` @ `ae2a28a`
 - [ ] 真机验证 FEC 编码布局与 libfec 逐字节一致（首次写入分区后跑 `verify_image`）
 
-### M3.5.2 SAF 桥 ❌（未开始，依赖 M4 UI 才能真机验）
+### M3.5.2a tempfile 落到 app cache ✅（`8fbe72f` + `b0e3bf8`）
 
-- [ ] `SAF_BRIDGE.md` 方案落地：`/saf/fd/<fd>` 虚拟路径
+- [x] 新增 `python_main.init_runtime(cache_dir)`，把 `os.environ['TMPDIR']` 指到 `cache_dir/avbtool-tmp/`
+- [x] `AvbToolRunnerImpl.ensureInitialized()` 首次 import 后调 `init_runtime(appContext.cacheDir.absolutePath)`（`runCatching` 非致命）
+- [x] 幂等验证：第 2 次调用返回 False，不会重复 makedirs
+
+### M3.5.2c 大文件 mmap ✅（`eba1aa3` + `625a194`）
+
+- [x] 新增 `app/src/main/python/avb_io.py`（158 行）：`smart_read/smart_write`，阈值 32 MB
+- [x] `avb_fec.encode_fec()` 用 `avb_io.smart_read/smart_write` 替代 `f.read()/f.write()`
+- [x] 33MB 随机数据 roundtrip 测试通过
+- [x] 端到端：`add_hashtree_footer --fec_num_roots 2` 跑通，`info_image` 完整解析
+
+### M3.5.2b SAF fd 桥 ❌（延后到 M4 UI）
+
+- [ ] `SAF_BRIDGE.md` 方案落地：`/saf/fd/<id>` 虚拟路径
 - [ ] Python 侧 monkey-patch `builtins.open` 识别 SAF 前缀
 - [ ] Kotlin `registerSafFd` 通道（Python ↔ Kotlin fd 传递）
-- [ ] `stageInput` / `promoteToOutput` 真正读写 content URI（当前 M3.2 版已能拷贝文件，但没有 Python 侧透明桥）
-- [ ] Python 侧 `tempfile` 落到 app cache dir（不用系统 `/tmp`）
+- [ ] 与 DetailScreen 的 SAF picker 合并实施（M4）
+
+### M3.5.2 收尾 ⏳
+
+- [ ] 等 CI 绿（`2431789` 及之后）
+- [ ] 签 tag `m3.5.2-io-mmap-tmpdir`
 
 ## M4 UI 接动作 ❌
 
 - [ ] DetailScreen 参数表单（按 `CommandParam` 动态渲染）
-- [ ] SAF picker 集成（输入文件 / 输出 URI）
+- [ ] SAF picker 集成（输入文件 / 输出 URI）— 与 M3.5.2b 一起做
 - [ ] 执行 + 输出展示（stdout / stderr 双 pane）
 - [ ] 常用命令卡切到 `execution_history` 真实历史
 - [ ] 空态 / 错误态
@@ -131,7 +148,7 @@
 
 ## M5 CI + 发布 ❌
 
-- [ ] Actions 加 Release ���体构建 + 签名
+- [ ] Actions 加 Release 体积构建 + 签名
 - [ ] `lint` 通过
 - [ ] 手机实机验证（arm64-v8a）
 - [ ] `REVIEW_CRITERIA.md` 全过
@@ -151,3 +168,4 @@
 | M3.3 v2 | `m3.3-pure-python-rsa` | `4d62088` |
 | M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
 | M3.5.1 | `m3.5-fec-pure-python` | `ae2a28a` |
+| M3.5.2a+c | （待 CI 绿后打 `m3.5.2-io-mmap-tmpdir`） | `2431789` |
