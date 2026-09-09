@@ -97,7 +97,7 @@
 
 - [x] `python_main.py` 加 `__help__` 虚拟命令：`{"commandName": "__help__", "args": ["<subcmd>"]}` → dispatch 到 `<subcmd> --help`
 - [x] `fetchHelp` 真实现：Kotlin 侧 `AvbToolRunnerImpl.fetchHelp()` 调 `__help__` 命令 → 管道 `AvbHelpParser.parse()` → 返回 `List<CommandParam>`（commit `8eecab3`）
-- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5.2b → M4）
+- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5.2b → M4.2b）
 - [x] 签 tag `m3.4-fetchhelp-real` @ `8eecab3`
 
 ### M3.5.1 FEC 编码 ✅（纯 Python RS，tag `m3.5-fec-pure-python` @ `ae2a28a`）
@@ -125,7 +125,7 @@
 - [x] 33MB 随机数据 roundtrip 测试通过
 - [x] 端到端：`add_hashtree_footer --fec_num_roots 2` 跑通，`info_image` 完整解析
 
-### M3.5.2b SAF fd 桥 ❌（延后到 M4 UI）
+### M3.5.2b SAF fd 桥 ❌（延后到 M4.2b）
 
 - [ ] `SAF_BRIDGE.md` 方案落地：`/saf/fd/<id>` 虚拟路径
 - [ ] Python 侧 monkey-patch `builtins.open` 识别 SAF 前缀
@@ -148,8 +148,18 @@
     - Kotlin 不支持 tuple destructuring（`val (a,b,c,d) = when {...} -> (x,y,z,w)`）
     - Compose M3 1.3.0 `Scaffold`/`TopAppBar`/`ExposedDropdownMenuBox`/`menuAnchor()` 都 experimental，需 `@OptIn(ExperimentalMaterial3Api::class)`
     - `DetailState` 是顶层类（在 `DetailViewModel.kt` 里）→ 必须单独 import，不能写 `DetailViewModel.DetailState`
-- [ ] M4.2 SAF picker 集成（输入文件 / 输出 URI）+ M3.5.2b fd 桥
-- [ ] M4.3 常用命令卡切到 `execution_history` 真实历史 + 空态 / 错误态 + ViewModel 单测
+- [x] **M4.2 SAF picker + stageInput 输入 ✅**（tag `m4.2-saf-picker` @ `1a9d56a`）
+  - `DetailState.inputUris: Map<paramName, Uri>` 新增字段
+  - `DetailViewModel.setInputUri()`；`execute()` 里逐个调 `stageInput(uri)` 转本地路径
+  - `DetailScreen` 加 `rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument())`
+  - FILE/PATH 参数行显示"从存储选择…"按钮 + 保留手动路径输入作为回退
+  - 未包含：fd-bridge 让 avbtool 直写 SAF 输出 Uri（见 M4.2b）
+  - 教训：
+    - SAF Uri 在 Java/Kotlin 里**不能**直接放到 argv 传给 Python —— 必须先经 `stageInput` 拷贝到 `cacheDir` 才能被 Python 的 `open()` 读到；这次 M4.2 走的就是这条拷贝路径
+    - Kotlin `try { val x = ... }` 定义的局部变量在 try 外面不可见；如果要跨作用域（比如 persist 步骤要读 request）→ 用 `var x: T? = null` 声明在 try 外面，try 里面赋 `x = ...`
+    - 手写 MCP `content` 时不要在函数签名里插不必要的换行（`choices: List<String>,\n value: String` 会被 Kotlin 解析成两个独立参数），一律写紧凑形式
+- [ ] **M4.2b SAF 输出 + fd-bridge**（`registerSafFd` + monkey-patch `open/write`，让 avbtool 通过 `/saf/fd/<id>` 直写）
+- [ ] **M4.3** Home 常用命令卡切 `execution_history` 真实数据 + 空态 / 错误态 + ViewModel 单测
 
 ## M5 CI + 发布 ❌
 
@@ -175,3 +185,4 @@
 | M3.5.1 | `m3.5-fec-pure-python` | `ae2a28a` |
 | M3.5.2a+c | `m3.5.2-io-mmap-tmpdir` | `5cc5bab` |
 | M4.1 | `m4.1-detail-form` | `f37614f` |
+| M4.2 | `m4.2-saf-picker` | `1a9d56a` |
