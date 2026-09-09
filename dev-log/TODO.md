@@ -27,7 +27,7 @@
 - [x] Room entity / dao / db / repo 全套
 - [x] `AvbToolRunner` 接口（7 方法：run / fetchHelp / aospHead / isFecLoaded / stageInput / promoteToOutput / cleanupTemp）
 - [x] `AvbExecutionRequest` / `AvbExecutionResult` / `OutputFile` model
-- [x] `CommandSeedModels`（k kotlinx.serialization）
+- [x] `CommandSeedModels`（kotlinx.serialization）
 - [x] `AvbHelpParser`（argparse `--help` 解析器）
 - [x] `CommandRepository`（seed + 24h 缓存 + fallback）
 
