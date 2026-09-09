@@ -43,6 +43,11 @@ import time
 # mirror). See `avb_rsa.py` and `docs/tech/AOSP_PATCH.md`.
 import avb_rsa
 
+# M3.5 FEC: pure-Python RS(255, 253) encoder. Replaces 2 `fec` subprocess
+# calls that would otherwise require the Android libfec binary (not
+# present on Android). See `avb_fec.py` and `docs/tech/AOSP_PATCH.md`.
+import avb_fec
+
 # Keep in sync with libavb/avb_version.h.
 AVB_VERSION_MAJOR = 1
 AVB_VERSION_MINOR = 2
@@ -4009,15 +4014,9 @@ def calc_fec_data_size(image_size, num_roots):
   Raises:
     ValueError: If output from the 'fec' tool is invalid.
   """
-  p = subprocess.Popen(
-      ['fec', '--print-fec-size', str(image_size), '--roots', str(num_roots)],
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE)
-  (pout, perr) = p.communicate()
-  retcode = p.wait()
-  if retcode != 0:
-    raise ValueError('Error invoking fec: {}'.format(perr))
-  return int(pout)
+  # M3.5: pure-Python RS encoder. Same formula as libfec's
+  # `fec_ecc_get_size()` (see ecc.h). No subprocess call to `fec` needed.
+  return avb_fec.fec_data_size(image_size, num_roots)
 
 
 def generate_fec_data(image_filename, num_roots):
@@ -4033,16 +4032,15 @@ def generate_fec_data(image_filename, num_roots):
   Raises:
     ValueError: If calling the 'fec' tool failed or the output is invalid.
   """
-  with tempfile.NamedTemporaryFile() as fec_tmpfile:
-    try:
-      subprocess.check_call(
-          ['fec', '--encode', '--roots', str(num_roots), image_filename,
-           fec_tmpfile.name],
-          stderr=open(os.devnull, 'wb'))
-    except subprocess.CalledProcessError as e:
-      raise ValueError('Execution of \'fec\' tool failed: {}.'
-                       .format(e)) from e
-    fec_data = fec_tmpfile.read()
+  # M3.5: pure-Python RS encoder. Reads the image file, computes parity
+  # bytes with a valid FEC footer, and returns just the parity portion
+  # (matching what the Android `fec` binary would have produced).
+  try:
+    with open(image_filename, 'rb') as f:
+      input_bytes = f.read()
+    fec_data = avb_fec.encode_fec_buffer(input_bytes, num_roots)
+  except (OSError, ValueError) as e:
+    raise ValueError('Execution of FEC encoder failed: {}'.format(e)) from e
 
   footer_size = struct.calcsize(FEC_FOOTER_FORMAT)
   footer_data = fec_data[-footer_size:]
