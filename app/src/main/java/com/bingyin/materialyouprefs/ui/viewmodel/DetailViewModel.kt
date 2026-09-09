@@ -43,6 +43,14 @@ data class DetailState(
      * the Python runner.
      */
     val inputUris: Map<String, Uri> = emptyMap(),
+    /**
+     * SAF Uri selected by the user as the destination for the freshest
+     * output file produced by this command (M4.2b). If the runner sees
+     * non-empty `generatedFiles` from Python, it promotes the newest one
+     * into this Uri via [AvbToolRunner.promoteToOutput] and echoes it
+     * back on [AvbExecutionResult.Success.outputUri].
+     */
+    val outputUri: Uri? = null,
     val isRunning: Boolean = false,
     val lastResult: AvbExecutionResult? = null,
     val status: String = "加载中…",
@@ -64,10 +72,12 @@ data class DetailState(
  *      [AvbExecutionRequest], call [AvbToolRunner.run], and record the
  *      outcome to `execution_history`.
  *
- * The fd-bridge (M3.5.2b) — letting avbtool write directly to a SAF
- * output Uri via a `/saf/fd/<id>` virtual path — is intentionally
- * deferred; the current runner still uses its copy-through-tempfile
- * path for outputs.
+ * Output path (M4.2b): if the user picks an output SAF Uri via
+ * [setOutputUri] (or the UI picker), the request carries that Uri and the
+ * runner promotes the freshest file Python produced into it after
+ * execution. The fd-bridge (M3.5.2b) — letting avbtool write directly to
+ * a SAF output Uri via a `/saf/fd/<id>` virtual path — is deferred to
+ * M4.2c.
  */
 class DetailViewModel(
     private val repository: CommandRepository,
@@ -157,6 +167,17 @@ class DetailViewModel(
     }
 
     /**
+     * Set the SAF Uri for the freshest output file. If set and the runner
+     * sees non-empty `generatedFiles`, the newest one is promoted into
+     * this Uri via [AvbToolRunner.promoteToOutput] before returning.
+     */
+    fun setOutputUri(uri: Uri) {
+        val current = _state.value
+        if (current.isRunning) return
+        _state.value = current.copy(outputUri = uri)
+    }
+
+    /**
      * Validate + execute the currently form-filled parameters.
      *
      * Validation: every param with `required=true` must have a non-blank
@@ -165,17 +186,17 @@ class DetailViewModel(
      * not fail the run on non-required-but-blank params — those are simply
      * omitted from the CLI argv.
      *
-     * SAF handling (M4.2):
+     * SAF handling (M4.2 / M4.2b):
      *   - If any parameter appears in [DetailState.inputUris], call
      *     [AvbToolRunner.stageInput] on that Uri (background thread) to
      *     copy the file into `cacheDir/avbtool-in-*.<ext>` and substitute
      *     the resulting local path into the args slot.
-     *   - [outputUri] is currently unused by avbtool runner; the Python
-     *     side writes into its own tmpdir. promoteToOutput is left to a
-     *     later milestone (fd-bridge in M3.5.2b) that lets avbtool write
-     *     directly to a SAF Uri via a `/saf/fd/<id>` virtual path.
+     *   - If [outputUri] (arg or state) is set, the runner promotes the
+     *     freshest file Python reported in `generatedFiles` into that Uri
+     *     after execution completes (see `AvbToolRunnerImpl.run`).
      *
-     * @param outputUri  Ignored for now (M4.2b will plumb through).
+     * @param outputUri Optional override for the state-tracked output Uri.
+     *                   Explicit arg wins over [DetailState.outputUri].
      */
     fun execute(
         outputUri: Uri? = null,
@@ -190,6 +211,8 @@ class DetailViewModel(
         val params = current.params
         val values = current.inputValues
         val safUris = current.inputUris
+        // Explicit arg wins over the remembered state (UI picker path).
+        val chosenOutputUri = outputUri ?: current.outputUri
 
         // Required-param check.
         for (p in params) {
@@ -259,7 +282,7 @@ class DetailViewModel(
                     args = args,
                     params = resolvedValues,
                     inputUris = safUris.values.toList(),
-                    outputUri = outputUri,
+                    outputUri = chosenOutputUri,
                 )
                 request = req
 
@@ -306,7 +329,7 @@ class DetailViewModel(
                             startedAtMs = startedAt,
                             durationMs = duration,
                             inputFiles = safUris.values.joinToString(",") { it.toString() },
-                            outputFiles = outputUri?.toString() ?: "",
+                            outputFiles = chosenOutputUri?.toString() ?: "",
                         ),
                     )
                 }
