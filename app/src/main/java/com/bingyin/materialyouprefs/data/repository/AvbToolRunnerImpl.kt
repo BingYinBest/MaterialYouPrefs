@@ -7,6 +7,7 @@ import com.bingyin.materialyouprefs.data.model.AvbExecutionRequest
 import com.bingyin.materialyouprefs.data.model.AvbExecutionResult
 import com.bingyin.materialyouprefs.data.model.CommandParam
 import com.bingyin.materialyouprefs.data.model.ErrorCode
+import com.bingyin.materialyouprefs.data.parser.AvbHelpParser
 import com.chaquo.python.PyException
 import com.chaquo.python.PyObject
 import com.chaquo.python.Python
@@ -39,9 +40,12 @@ import javax.inject.Singleton
  *   - Any other Throwable -> UNKNOWN
  *   - Result JSON with kind=Failure -> mapped by the enum string
  *
- * M3.1 scope: only `version` is dispatched on the Python side. All other
- * commands return an UNKNOWN_PARAM failure so the UI has a clean path.
- * M3.2 vendors the real avbtool.py.
+ * Milestone scope:
+ *   - M3.1: only `version` is dispatched on the Python side.
+ *   - M3.2: vendored the real avbtool.py; `run()` handles all subcommands.
+ *   - M3.4: `fetchHelp()` is now real -- it shells out to
+ *     `python_main.run` with the `__help__` virtual command and pipes the
+ *     argparse help output through [AvbHelpParser].
  *
  * Chaquopy 15 API notes:
  *   - There is no `PyModule` class. Use `PyObject` from `py.getModule(name)`.
@@ -83,11 +87,42 @@ class AvbToolRunnerImpl @Inject constructor(
             }
         }
 
-    override suspend fun fetchHelp(commandName: String): List<CommandParam> {
-        // M3.2+ will shell out to `avbtool.py <name> --help` and parse.
-        // M3.1 returns empty list so callers fall back to seed data.
-        return emptyList()
-    }
+    /**
+     * Fetch argparse help text via the `__help__` virtual command, then run
+     * it through [AvbHelpParser]. Returns an empty list on any failure so
+     * callers (e.g. [CommandRepository.getByIdOrFetch]) can fall back to
+     * whatever they already have cached.
+     */
+    override suspend fun fetchHelp(commandName: String): List<CommandParam> =
+        withContext(Dispatchers.IO) {
+            if (commandName.isEmpty()) return@withContext emptyList()
+            try {
+                ensureInitialized()
+                val argsJson = buildJsonObject {
+                    put("commandName", JsonPrimitive("__help__"))
+                    put("args", buildJsonArray { add(JsonPrimitive(commandName)) })
+                }.toString()
+                val raw = callPythonRun(argsJson)
+                val root = json.parseToJsonElement(raw).jsonObject
+                val kind = root["kind"]?.jsonPrimitive?.content ?: "Failure"
+                if (kind != "Success") {
+                    Log.w(TAG, "fetchHelp '$commandName' returned Failure: " +
+                        (root["message"]?.jsonPrimitive?.content ?: "(no msg)"))
+                    return@withContext emptyList()
+                }
+                val helpText = root["stdout"]?.jsonPrimitive?.content ?: ""
+                val params = runCatching { AvbHelpParser.parse(helpText) }
+                    .getOrDefault(emptyList())
+                Log.v(TAG, "fetchHelp '$commandName': ${params.size} params")
+                params
+            } catch (e: PyException) {
+                Log.w(TAG, "fetchHelp '$commandName' PyException: ${e.message}")
+                emptyList()
+            } catch (t: Throwable) {
+                Log.w(TAG, "fetchHelp '$commandName' failed", t)
+                emptyList()
+            }
+        }
 
     override fun aospHead(): String = AOSP_HEAD
 
