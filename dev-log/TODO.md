@@ -92,15 +92,16 @@
 - [ ] 生成 `patches/avbtool-android.patch`（`diff -u` 形式）
 - [ ] 单元测试：用 `openssl rsautl` 生成的签名验证 Python 侧实现
 
-### M3.4 Kotlin ↔ Python 桥完善 ❌
+### M3.4 Kotlin ↔ Python 桥完善 ◐
 
-- [ ] `python_main.py` 加更多命令：`version` / `help` / 全部 argparse 子命令透传
-- [ ] `fetchHelp` 真实现：Python 侧调 `avbtool <cmd> --help` 输出到 stdout，Kotlin 侧 `AvbHelpParser` 解析
-- [ ] `stageInput` / `promoteToOutput` 通过 content URI 的 SAF bridge 接入
+- [x] `python_main.py` 加 `__help__` 虚拟命令：`{"commandName": "__help__", "args": ["<subcmd>"]}` → dispatch 到 `<subcmd> --help`
+- [x] `fetchHelp` 真实现：Kotlin 侧 `AvbToolRunnerImpl.fetchHelp()` 调 `__help__` 命令 → 管道 `AvbHelpParser.parse()` → 返回 `List<CommandParam>`（commit `8eecab3`）
+- [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5）
 
 ### M3.5 SAF 桥 + FEC ❌
 
 - [ ] `SAFBRIDGE.md` 方案落地：`/saf/fd/<fd>` 虚拟路径
+- [ ] `stageInput` / `promoteToOutput` 真正读写 content URI（当前 M3.2 版已能拷贝文件，但没有 Python 侧透明桥）
 - [ ] `external/avb/libavb/libavb/src/fec/fec_rs.c` 编译 `libavbfec.so`
 - [ ] CI workflow 加 NDK 工具链
 - [ ] ctypes dlopen 胶水（Python 侧）
@@ -133,5 +134,6 @@
 | M3.1 | （未单独 tag，见 M3.2） | `2a7afa8a` |
 | M3.2 | `m3.2-avbtool-vendored` | `10f5802c` |
 | M3.2.5 | （未 tag） | `931e7cf` |
+| M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
 
 ```
