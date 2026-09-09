@@ -212,7 +212,7 @@ class HomeViewModel(
             durationMs < 60_000L -> {
                 val s = durationMs / 1_000L
                 val frac = (durationMs % 1_000L) / 100L
-                "$s.$fracs"
+                "$s.${frac}s"
             }
             else -> "${durationMs / 60_000L}分${durationMs / 1_000L % 60L}秒"
         }
