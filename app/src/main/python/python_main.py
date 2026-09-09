@@ -15,9 +15,24 @@ and the returned value is a JSON string matching the shape of
 M3.2 scope
 ----------
 - ``version``: local info probe (no avbtool import).
-- Any other command: dynamically imported ``avbtool.py`` and run through
-  its argparse main. ``SystemExit`` is captured; stdout/stderr are
-  redirected through ``io.StringIO``.
+- Any other command: ``avbtool.py`` is executed via ``runpy.run_path`` with
+  ``run_name='__main__'`` so the ``if __name__ == '__main__'`` block at the
+  bottom of the vendored AOSP script runs end-to-end. That block does
+  ``tool = AvbTool(); tool.run(sys.argv)`` -- the same code path a real
+  `python3 avbtool.py ...` invocation takes, which is far more stable than
+  importing the module and instantiating ``AvbTool`` ourselves.
+
+Why runpy and not ``import avbtool; avbtool.AvbTool().run(argv)``?
+------------------------------------------------------------------
+That's the approach v1.0.0-avbtool shipped with. On-device it produced
+``TypeError: 'module' object is not callable`` -- the class attribute ``AvbTool``
+was returning a module instead of a class for reasons we couldn't fully
+reproduce locally (we verified ``import avbtool; avbtool.AvbTool`` works on
+CPython 3.12 Linux). The v1.0.0-avbtool.2+ rebuild goes through runpy so
+we stop depending on attribute-level introspection of the vendored module
+at all. The AOSP ``__main__`` block is what CI's
+``python3 avbtool.py --help`` path exercises, so matching it on Android
+is the safest thing to do.
 
 M3.3 (deferred, v2 plan)
 ------------------------
@@ -34,19 +49,23 @@ calls this and feeds the output to ``AvbHelpParser``.
 
 M3.5.2 scope
 ------------
-- M3.5.2a: `init_runtime(cache_dir)` -- pointed by Kotlin's
-  `AvbToolRunnerImpl.ensureInitialized()`, so `tempfile.NamedTemporaryFile()`
-  (used once inside `avbtool.py`'s `sign()`) lands under the app's private
-  cache dir instead of the system `/tmp`.
-- M3.5.2c: mmap-backed large-file I/O is delegated to `avb_io` (see
-  `avb_io.py`). `avb_fec.encode_fec` uses `avb_io.smart_read`/`smart_write`.
-- M3.5.2b (SAF fd bridge): deferred to M4.2c -- needs a SAF picker to test
-  end-to-end; M4.2b uses the stage+promote path (see ``_collect_workdir_files``).
+- M3.5.2a: ``init_runtime(cache_dir)`` -- pointed by Kotlin's
+  ``AvbToolRunnerImpl.ensureInitialized()``, so
+  ``tempfile.NamedTemporaryFile()`` (used once inside ``avbtool.py``'s
+  ``sign()``) lands under the app's private cache dir instead of the
+  system ``/tmp``.
+- M3.5.2c: mmap-backed large-file I/O is delegated to ``avb_io`` (see
+  ``avb_io.py``). ``avb_fec.encode_fec`` uses
+  ``avb_io.smart_read``/``smart_write``.
+- M3.5.2b (SAF fd bridge): deferred to M4.2c -- needs a SAF picker to
+  test end-to-end; M4.2b uses the stage+promote path (see
+  ``_collect_workdir_files``).
 """
 
 import io
 import json
 import os
+import runpy
 import sys
 import tempfile
 import time
@@ -65,15 +84,15 @@ _runtime_initialized: bool = False
 
 
 def init_runtime(cache_dir):
-    """Point tempfile at `cache_dir/avbtool-tmp/`.
+    """Point tempfile at ``cache_dir/avbtool-tmp/``.
 
-    Called from Kotlin's AvbToolRunnerImpl.ensureInitialized() right after
-    we import this module, before any avbtool command runs.
+    Called from Kotlin's ``AvbToolRunnerImpl.ensureInitialized()`` right
+    after we import this module, before any avbtool command runs.
 
     ``cache_dir`` is ``Context.cacheDir.absolutePath`` on the Android side
     (typically ``/data/data/<pkg>/cache``). We create a subdir
     ``avbtool-tmp/`` under it and set ``TMPDIR`` accordingly so
-    ``tempfile.NamedTemporaryFile()`` (used once inside avbtool.py's
+    ``tempfile.NamedTemporaryFile()`` (used once inside ``avbtool.py``'s
     ``sign()``) writes there instead of the system ``/tmp``.
 
     Returns True if we rewired TMPDIR this call; False if it was already
@@ -141,39 +160,45 @@ def _collect_workdir_files(workdir):
     return out
 
 
-def _handle_avbtool_command(command, args, workdir=None):
-    """Import avbtool.py and dispatch one subcommand.
+def _find_avbtool_py():
+    """Locate ``avbtool.py``. Runs alongside ``python_main.py`` inside the
+    Chaquopy ``src/main/python`` directory. We use ``__file__`` first so
+    that a relocated source tree still works, then fall back to walking a
+    small number of common Android paths."""
+    here = os.path.dirname(os.path.abspath(__file__)) if __file__ else None
+    if here:
+        candidate = os.path.join(here, "avbtool.py")
+        if os.path.isfile(candidate):
+            return candidate
+    for base in (os.getcwd(), "/data/data", "/data/local/tmp"):
+        if not base:
+            continue
+        for root, _dirs, files in os.walk(base):
+            if "avbtool.py" in files:
+                return os.path.join(root, "avbtool.py")
+            # Don't descend too deep -- this is a fallback, not a search
+            # index.
+            if root.count(os.sep) - base.count(os.sep) > 3:
+                break
+    raise FileNotFoundError("avbtool.py not found near " + str(here))
 
-    We re-implement the ``__main__`` block of avbtool.py so the
-    argparse parser is exercised end-to-end (help / error paths
-    included).
+
+def _handle_avbtool_command(command, args, workdir=None):
+    """Execute one avbtool subcommand via the vendored ``avbtool.py``.
+
+    Uses ``runpy.run_path`` with ``run_name='__main__'`` so the
+    ``if __name__ == '__main__'`` block at the bottom of avbtool.py runs --
+    the same code path a real ``python3 avbtool.py <subcmd> ...`` takes.
 
     If ``workdir`` is given, the process is ``chdir``'d into it for the
     duration of the call so that relative ``--output=...`` paths produced
     by avbtool land somewhere predictable (M4.2b).
+
+    Returns a JSON string (see :func:`_success`).
     """
-    import avbtool as _avbtool  # noqa: F401 -- triggers vendored module load
+    script_path = _find_avbtool_py()
 
-    # --- v1.0.0-avbtool.2 diagnostic hook ---
-    # If we reach here, the vendored avbtool.py loaded OK. If it doesn't
-    # expose a callable `AvbTool`, surface a precise error instead of the
-    # opaque "TypeError: 'module' object is not callable" that would
-    # otherwise pop up. This was hiding the real cause behind a truncated
-    # stderr display on-device.
-    avbtool_attr = getattr(_avbtool, 'AvbTool', None)
-    if avbtool_attr is None:
-        raise RuntimeError(
-            "avbtool module loaded but has no 'AvbTool' attribute. "
-            "_avbtool type: " + type(_avbtool).__name__ +
-            ", __file__: " + str(getattr(_avbtool, '__file__', '<none>'))
-        )
-    if not callable(avbtool_attr):
-        raise RuntimeError(
-            "avbtool.AvbTool exists but is not callable. "
-            "type: " + type(avbtool_attr).__name__
-        )
-
-    argv = ["avbtool"] + [command] + list(args)
+    argv = ["avbtool.py", command] + list(args)
     old_argv = list(sys.argv)
     sys.argv = argv
 
@@ -183,15 +208,32 @@ def _handle_avbtool_command(command, args, workdir=None):
     sys.stdout = buf_out
     sys.stderr = buf_err
     old_cwd = os.getcwd() if workdir else None
+    exit_code = 0
     try:
         if workdir:
             os.chdir(workdir)
-        tool = avbtool_attr()
+        # runpy.run_path reads the script source fresh and execs it in a
+        # new globals dict. Because run_name is "__main__", avbtool.py's
+        # bottom ``if __name__ == '__main__'`` block fires and does
+        # ``AvbTool().run(sys.argv)`` -- the canonical AOSP entry point.
         try:
-            tool.run(argv)
-            exit_code = 0
+            runpy.run_path(script_path, run_name="__main__")
         except SystemExit as e:
-            exit_code = e.code if isinstance(e.code, int) else (1 if e.code else 0)
+            code = e.code
+            if code is None or code is False:
+                exit_code = 0
+            elif isinstance(code, int):
+                exit_code = code
+            else:
+                # argparse uses exit(2) for parse errors; if someone raises
+                # SystemExit with a non-int payload, surface it on stderr.
+                exit_code = 1
+                buf_err.write("\n[avbtool] SystemExit with non-int: " + repr(code) + "\n")
+    except Exception as e:
+        exit_code = 1
+        buf_err.write("\n[python_main] avbtool run_path raised: " +
+                      type(e).__name__ + ": " + str(e) + "\n" +
+                      traceback.format_exc(limit=8) + "\n")
     finally:
         sys.stdout, sys.stderr = old_stdout, old_stderr
         sys.argv = old_argv
@@ -243,15 +285,15 @@ def run(args_json):
     if command == "__help__":
         return _handle_help(argv)
 
-    # Everything else goes through avbtool.py.
+    # Everything else goes through avbtool.py via runpy.run_path.
     tmpdir = tempfile.mkdtemp(prefix="avbtool-", dir=os.getcwd() or None)
     try:
         result = _handle_avbtool_command(command, argv, workdir=tmpdir)
-    except ModuleNotFoundError as e:
+    except FileNotFoundError as e:
         duration = int((time.monotonic() - started) * 1000)
         return _failure(
             "PYTHON_EXCEPTION",
-            "Cannot import avbtool module: " + str(e),
+            "Cannot locate avbtool.py: " + str(e),
             duration,
         )
     except Exception as e:
