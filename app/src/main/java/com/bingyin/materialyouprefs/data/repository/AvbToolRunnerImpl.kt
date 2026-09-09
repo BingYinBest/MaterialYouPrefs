@@ -83,28 +83,30 @@ class AvbToolRunnerImpl @Inject constructor(
                 ensureInitialized()
                 val argsJson = encodeArgsJson(request)
                 val raw = callPythonRun(argsJson)
-                var result = parseResult(raw)
+                val parsed = parseResult(raw)
                 // M4.2b: when the caller picked an output Uri and Python
                 // reported generated files in its tmpdir, promote the
                 // freshest one into the SAF Uri. Done here (suspend-safe)
                 // so the UI only sees the final URI-resolved result.
-                if (result is AvbExecutionResult.Success &&
-                    result.exitCode == 0 &&
+                if (parsed is AvbExecutionResult.Success &&
+                    parsed.exitCode == 0 &&
                     request.outputUri != null
                 ) {
+                    val success = parsed  // smart-cast into the concrete data class
+                    val outputUri = request.outputUri
                     val generated = parseGeneratedFiles(raw)
                     if (generated.isNotEmpty()) {
                         val candidate = generated.last()
                         runCatching {
-                            if (promoteToOutput(candidate, request.outputUri!!)) {
-                                result = result.copy(outputUri = request.outputUri)
+                            if (promoteToOutput(candidate, outputUri)) {
+                                return@withContext success.copy(outputUri = outputUri)
                             }
                         }.onFailure { t ->
                             Log.w(TAG, "promoteToOutput after run failed", t)
                         }
                     }
                 }
-                result
+                parsed
             } catch (e: PyException) {
                 AvbExecutionResult.Failure(
                     errorCode = ErrorCode.PYTHON_EXCEPTION,
