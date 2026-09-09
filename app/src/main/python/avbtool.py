@@ -37,6 +37,12 @@ import sys
 import tempfile
 import time
 
+# M3.3 v2: pure-Python RSA helpers. Replaces 4 `openssl` subprocess
+# calls that would otherwise require the openssl binary (not present
+# on Android) or a `cryptography` wheel (not in Chaquopy's pypi-13.1
+# mirror). See `avb_rsa.py` and `docs/tech/AOSP_PATCH.md`.
+import avb_rsa
+
 # Keep in sync with libavb/avb_version.h.
 AVB_VERSION_MAJOR = 1
 AVB_VERSION_MINOR = 2
@@ -366,33 +372,19 @@ class RSAPublicKey(object):
     # but unfortunately PyCrypto is not available in the builder. So
     # instead just parse openssl(1) output to get this
     # information. It's ugly but...
-    args = ['openssl', 'rsa', '-in', key_path, '-modulus', '-noout']
-    p = subprocess.Popen(args,
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-    (pout, perr) = p.communicate()
-    if p.wait() != 0:
-      # Could be just a public key is passed, try that.
-      args.append('-pubin')
-      p = subprocess.Popen(args,
-                           stdin=subprocess.PIPE,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
-      (pout, perr) = p.communicate()
-      if p.wait() != 0:
-        raise AvbError('Error getting public key: {}'.format(perr))
-
-    if not pout.lower().startswith(self.MODULUS_PREFIX):
-      raise AvbError('Unexpected modulus output')
-
-    modulus_hexstr = pout[len(self.MODULUS_PREFIX):]
+    # M3.3 v2: parse modulus directly from the PEM/DER key file using the
+    # pure-Python RSA module. Handles both private and public keys,
+    # PKCS#8 and traditional RSAPrivateKey, without shelling out to
+    # openssl(1).
+    try:
+      self.modulus = avb_rsa.parse_modulus(key_path)
+    except (ValueError, OSError) as e:
+      raise AvbError('Error getting public key: {}'.format(e))
 
     # The exponent is assumed to always be 65537 and the number of
     # bits can be derived from the modulus by rounding up to the
     # nearest power of 2.
     self.key_path = key_path
-    self.modulus = int(modulus_hexstr, 16)
     self.num_bits = round_to_pow2(int(math.ceil(math.log(self.modulus, 2))))
     self.exponent = 65537
 
@@ -480,16 +472,16 @@ class RSAPublicKey(object):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
       else:
-        p = subprocess.Popen(
-            ['openssl', 'rsautl', '-sign', '-inkey', self.key_path, '-raw'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-      (pout, perr) = p.communicate(padding_and_hash)
-      retcode = p.wait()
-      if retcode != 0:
-        raise AvbError('Error signing: {}'.format(perr))
-      signature = pout
+        # M3.3 v2: pure-Python RSA private-key signature. `padding_and_hash`
+        # is already the PKCS#1 v1.5 padded EM built from algorithm.padding
+        # + digest, so this is a straight modular exponentiation.
+        try:
+          _n, _e, _d = avb_rsa.parse_key_file(self.key_path)
+          if _d is None:
+            raise ValueError('key file does not contain a private key')
+          signature = avb_rsa.rsa_sign_raw(_d, _n, padding_and_hash)
+        except Exception as e:
+          raise AvbError('Error signing: {}'.format(e))
     if len(signature) != algorithm.signature_num_bytes:
       raise AvbError('Error signing: Invalid length of signature')
     return signature
@@ -600,46 +592,12 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
   #
   # but since 'avbtool verify_image' is used on the builders we don't want
   # to rely on Crypto.PublicKey.RSA. Instead just use openssl(1) to verify.
-  asn1_str = ('asn1=SEQUENCE:pubkeyinfo\n'
-              '\n'
-              '[pubkeyinfo]\n'
-              'algorithm=SEQUENCE:rsa_alg\n'
-              'pubkey=BITWRAP,SEQUENCE:rsapubkey\n'
-              '\n'
-              '[rsa_alg]\n'
-              'algorithm=OID:rsaEncryption\n'
-              'parameter=NULL\n'
-              '\n'
-              '[rsapubkey]\n'
-              'n=INTEGER:{}\n'
-              'e=INTEGER:{}\n').format(hex(modulus).rstrip('L'),
-                                       hex(exponent).rstrip('L'))
-
-  with tempfile.NamedTemporaryFile() as asn1_tmpfile:
-    asn1_tmpfile.write(asn1_str.encode('ascii'))
-    asn1_tmpfile.flush()
-
-    with tempfile.NamedTemporaryFile() as der_tmpfile:
-      p = subprocess.Popen(
-          ['openssl', 'asn1parse', '-genconf', asn1_tmpfile.name, '-out',
-           der_tmpfile.name, '-noout'])
-      retcode = p.wait()
-      if retcode != 0:
-        raise AvbError('Error generating DER file')
-
-      p = subprocess.Popen(
-          ['openssl', 'rsautl', '-verify', '-pubin', '-inkey', der_tmpfile.name,
-           '-keyform', 'DER', '-raw'],
-          stdin=subprocess.PIPE,
-          stdout=subprocess.PIPE,
-          stderr=subprocess.PIPE)
-      (pout, perr) = p.communicate(sig_blob)
-      retcode = p.wait()
-      if retcode != 0:
-        raise AvbError('Error verifying data: {}'.format(perr))
-      if pout != padding_and_digest:
-        sys.stderr.write('Signature not correct\n')
-        return False
+  # M3.3 v2: verify directly with pure-Python RSA. Replaces the prior
+  # `openssl asn1parse -genconf` + `openssl rsautl -verify` two-step
+  # flow that required the openssl binary on the host.
+  if not avb_rsa.rsa_verify_raw(modulus, exponent, padding_and_digest, sig_blob):
+    sys.stderr.write('Signature not correct\n')
+    return False
   return True
 
 
