@@ -1,5 +1,8 @@
 package com.bingyin.materialyouprefs.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +24,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
@@ -28,8 +32,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -63,7 +67,7 @@ import com.bingyin.materialyouprefs.ui.viewmodel.DetailState
 import com.bingyin.materialyouprefs.ui.viewmodel.DetailViewModel
 
 /**
- * Detail screen (M4.1).
+ * Detail screen.
  *
  * Two sections:
  *   - Scrollable param form at the top: one row per [CommandParam],
@@ -71,9 +75,10 @@ import com.bingyin.materialyouprefs.ui.viewmodel.DetailViewModel
  *   - A live "output" card appended below the form when the last run
  *     finishes.
  *
- * M4.2 will add SAF picker plumbing (inputUris / outputUri) and M3.5.2b
- * fd-bridge; M4.1 always runs with empty SAF inputs and lets the runner
- * use its copy-through-tempfile path.
+ * M4.2 SAF picker: FILE/PATH params get a dedicated "选择文件" button
+ * that opens [ActivityResultContracts.OpenDocument]. The returned Uri
+ * is stored in [DetailViewModel.setInputUri] and staged to a local
+ * temp file on execute (see the ViewModel).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,6 +130,28 @@ private fun CommandExecutionContent(
 ) {
     val command = state.command ?: return
     val listState = rememberLazyListState()
+
+    // SAF picker for FILE/PATH parameters. Each call opens a fresh picker
+    // but the launcher is remembered; `pickedParamName` is a state slot so
+    // we know which param the returned Uri belongs to.
+    var pickedParamName by remember { mutableStateOf<String?>(null) }
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            pickedParamName?.let { name ->
+                viewModel.setInputUri(name, uri)
+            }
+        }
+        pickedParamName = null
+    }
+    fun openPickerFor(paramName: String) {
+        pickedParamName = paramName
+        // MIME wildcard: accept anything. Individual avbtool subcommands
+        // validate file content (e.g. a key file must be PEM) — we trust
+        // avbtool's own error messages rather than enforcing extension.
+        filePicker.launch(arrayOf("*/*"))
+    }
 
     Column(
         modifier = Modifier
@@ -202,6 +229,13 @@ private fun CommandExecutionContent(
                             value = state.inputValues[param.name] ?: param.default.orEmpty(),
                             enabled = !state.isRunning,
                             onChange = { v -> viewModel.setValue(param.name, v) },
+                            onPickFile = if (param.type == ParamType.FILE ||
+                                param.type == ParamType.PATH
+                            ) {
+                                { openPickerFor(param.name) }
+                            } else {
+                                null
+                            },
                         )
                     }
                 }
@@ -297,6 +331,8 @@ private fun CommandHeader(command: CommandDefinition) {
  *   - CHOICE   → ExposedDropdownMenu when choices are non-empty
  *   - INT/PATH/FILE/STRING → OutlinedTextField (single line, plain text;
  *     argparse does strict validation)
+ *   - FILE/PATH (when [onPickFile] is non-null) → SAF picker button +
+ *     manual path entry below.
  */
 @Composable
 private fun ParamRow(
@@ -304,6 +340,7 @@ private fun ParamRow(
     value: String,
     enabled: Boolean,
     onChange: (String) -> Unit,
+    onPickFile: (() -> Unit)? = null,
 ) {
     ElevatedCard(
         shape = RoundedCornerShape(12.dp),
@@ -338,7 +375,7 @@ private fun ParamRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (param.default?.isNotBlank() == true) {
+            if (param.default?.isBlank() != true) {
                 Text(
                     text = "默认：${param.default}",
                     style = MaterialTheme.typography.bodySmall,
@@ -377,14 +414,55 @@ private fun ParamRow(
                         )
                     }
                 }
-                else -> OutlinedTextField(
-                    value = value,
-                    onValueChange = { if (enabled) onChange(it) },
-                    enabled = enabled,
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text(param.name) },
-                    singleLine = true,
-                )
+                else -> {
+                    val isPathLike = param.type == ParamType.FILE ||
+                        param.type == ParamType.PATH
+                    if (isPathLike && onPickFile != null) {
+                        // Two-row layout: SAF pick button on top, manual
+                        // path entry below (keeps flexibility for users
+                        // who want to type an absolute path).
+                        Text(
+                            text = "文件选择",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = onPickFile,
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.InsertDriveFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            if (value.isNotBlank()) {
+                                Text(value.takeLast(48))
+                            } else {
+                                Text("从存储选择…")
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = { if (enabled) onChange(it) },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("或手动输入路径") },
+                            singleLine = true,
+                        )
+                    } else {
+                        OutlinedTextField(
+                            value = value,
+                            onValueChange = { if (enabled) onChange(it) },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text(param.name) },
+                            singleLine = true,
+                        )
+                    }
+                }
             }
         }
     }
@@ -393,8 +471,8 @@ private fun ParamRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChoiceRow(
-    choices: List<String>,
-    value: String,
+    choices: List<String>
+, value: String,
     enabled: Boolean,
     onChange: (String) -> Unit,
 ) {
