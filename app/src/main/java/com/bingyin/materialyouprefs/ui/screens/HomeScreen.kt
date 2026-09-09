@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.NorthEast
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Terminal
@@ -42,7 +45,9 @@ import com.bingyin.materialyouprefs.ui.viewmodel.HomeViewModel
  *
  *   1. Version card     — avbtool version + AOSP HEAD + FEC status + refresh
  *   2. Terminal entry   — big card that navigates to the Terminal route
- *   3. Recommended cmds — 5 curated commands (M4+: replaces with execution_history)
+ *   3. Recommended cmds — M4.3+: sourced from execution_history top N
+ *                          (falls back to a static curated list until the
+ *                          user has run any command)
  *   4. Runtime status   — Python / Chaquopy / FEC / seed count
  */
 @Composable
@@ -56,6 +61,7 @@ fun HomeScreen(
     }
     val version by viewModel.version.collectAsStateWithLifecycle()
     val recommended by viewModel.recommended.collectAsStateWithLifecycle()
+    val recent by viewModel.recent.collectAsStateWithLifecycle()
     val runtime by viewModel.runtimeStatus.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshState.collectAsStateWithLifecycle()
 
@@ -68,7 +74,7 @@ fun HomeScreen(
     ) {
         item { VersionCard(version, refreshing, viewModel::refresh) }
         item { TerminalEntryCard(onTerminalClicked) }
-        item { RecommendedCard(recommended, onItemClicked) }
+        item { RecommendedCard(recent, recommended, onItemClicked) }
         item { RuntimeStatusCard(runtime) }
     }
 }
@@ -190,11 +196,12 @@ private fun TerminalEntryCard(onClick: () -> Unit) {
     }
 }
 
-// ---------- Card 3: Recommended commands ------------------------------
+// ---------- Card 3: Recommended commands (M4.3) -----------------------
 
 @Composable
 private fun RecommendedCard(
-    items: List<CommandDefinition>,
+    recent: List<HomeViewModel.RecentEntry>,
+    recommended: List<CommandDefinition>,
     onItemClicked: (String) -> Unit,
 ) {
     ElevatedCard(
@@ -203,61 +210,125 @@ private fun RecommendedCard(
     ) {
         Column(modifier = Modifier.padding(vertical = 12.dp)) {
             Text(
-                text = "常用命令",
+                text = if (recent.isNotEmpty()) "最近执行" else "常用命令",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
-            if (items.isEmpty()) {
-                Text(
-                    text = "暂无历史执行，去 Feature tab 探索",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(20.dp),
-                )
-            } else {
-                items.forEachIndexed { idx, cmd ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onItemClicked(cmd.id) }
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = iconKeyToIcon(cmd.iconKey),
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = cmd.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                            Text(
-                                text = cmd.summary,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
+            when {
+                recent.isNotEmpty() -> {
+                    recent.forEachIndexed { idx, row ->
+                        RecentRow(row, onClick = { onItemClicked(row.commandId) })
+                        if (idx < recent.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = cmd.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
                     }
-                    if (idx < items.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 20.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                        )
+                }
+                recommended.isNotEmpty() -> {
+                    recommended.forEachIndexed { idx, cmd ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onItemClicked(cmd.id) }
+                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = iconKeyToIcon(cmd.iconKey),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = cmd.title,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                )
+                                Text(
+                                    text = cmd.summary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = cmd.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        if (idx < recommended.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 20.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                            )
+                        }
                     }
+                }
+                else -> {
+                    Text(
+                        text = "暂无历史执行，去 Feature tab 探索",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(20.dp),
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RecentRow(
+    row: HomeViewModel.RecentEntry,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = iconKeyToIcon(row.iconKey),
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (row.succeeded) Icons.Filled.CheckCircle else Icons.Filled.Close,
+                    contentDescription = if (row.succeeded) "成功" else "失败",
+                    modifier = Modifier.size(14.dp),
+                    tint = if (row.succeeded) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = row.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                text = "exit=${row.exitCode} · ${formatRelative(row.startedAtMs)} · ${formatDurationMs(row.durationMs)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.NorthEast,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -297,7 +368,7 @@ private fun RuntimeStatusCard(status: HomeViewModel.RuntimeStatus) {
             Spacer(modifier = Modifier.height(4.dp))
             StatusRow(
                 "已注册命令",
-                if (status.seedRowCount < 0) "seed 未完成" else "${status.seedRowCount} 条",
+                if (status.seedRowCount >= 0) status.seedRowCount.toString() else "未初始化",
             )
         }
     }
@@ -322,15 +393,8 @@ private fun StatusRow(label: String, value: String) {
 }
 
 // ---------- Helpers ---------------------------------------------------
+private fun formatRelative(timestampMs: Long): String =
+    HomeViewModel.formatRelative(timestampMs)
 
-private fun formatRelative(timestampMs: Long): String {
-    val delta = System.currentTimeMillis() - timestampMs
-    return when {
-        delta < 0L -> "刚刚"
-        delta < 1000 -> "刚刚"
-        delta < 60_000 -> "${delta / 1000} 秒前"
-        delta < 3_600_000 -> "${delta / 60_000} 分钟前"
-        delta < 86_400_000 -> "${delta / 3_600_000} 小时前"
-        else -> "${delta / 86_400_000} 天前"
-    }
-}
+private fun formatDurationMs(durationMs: Long): String =
+    HomeViewModel.formatDurationMs(durationMs)
