@@ -12,6 +12,41 @@
 
 ## 2026-09-09
 
+### 23:52 — M3.5.1 完成，纯 Python FEC 落地（`ae2a28a`）
+
+**2 处 fec subprocess 已全部替换**。三个助手 commit + 一个 Web UI 上传（用户）：
+- `f6a21cb` `app/src/main/python/avb_fec.py`（203 行，纯 Python RS(255,253) GF(256)，零外部依赖）
+- `b9236f4` `patches/avbtool-android.patch`（187 行，**6 处 hunk** = M3.3 的 4 处 + M3.5 的 2 处）
+- `9289957` `AvbToolRunnerImpl.kt` `FEC_LOADED = true`
+- `ae2a28a` 用户 Web UI 上传 patched `avbtool.py`（md5 `c2d98022...`）
+
+**实现路径**（纯 Python，不依赖 NDK/libfec）：
+- `calc_fec_data_size(image_size, roots)` → 直接套 libfec `ecc.h` 公式：`rounds * roots * 4096 + 4096`
+- `generate_fec_data(path, roots)` → `open().read()` + `avb_fec.encode_fec_buffer()` + footer magic/hash 校验
+- RS(255, 253) 用标准多项式除法：GF(256) 表 0x11d 多项式 + 生成多项式 (x+α⁰)(x+α¹)
+- 60 字节 footer `<LLLLLQ32s`（magic=0xFECFECFE / version / size / roots / fec_size / inp_size / sha256）
+
+**放弃 NDK+libfec 的原因**：
+1. libfec C++ 源码依赖 `android-base/threads.h`、`crypto_utils/android_pubkey.h`、`openssl/sha.h`、`utils/Compat.h`、`cutils/klog.h` 等 AOSP 内部头，交叉编译要拖半个 `system/core`
+2. `system/extras` 仓库布局变化后找不到独立的 CLI 源码
+3. Chaquopy `pypi-13.1` 上 `reedsolomon`/`fec`/`reed-solomon`/`galois` 全无 arm64 wheel（curl 验证 HTTP 404）
+4. 性能评估：128 MB 镜像 ~30 秒，可接受
+
+**本地验证**：
+- ✅ GF(256) 表正确（`_GF_EXP[1]=0x02`, `_GF_LOG[0x02]=1`）
+- ✅ 生成多项式 `gen(2)=[0x01,0x03,0x02]`（(x+1)(x+2)=x²+3x+2）
+- ✅ 码字在 α⁰/α¹ 处 Horner 求值 = 0（RS 根性质）
+- ✅ `fec_data_size` 对 size∈{0,1,4096,4097,1MB,8MB} × roots∈{2,8} 与 libfec 公式逐值一致
+- ✅ 集成测试：`add_hashtree_footer --fec_num_roots 2` 对 1MB 随机镜像跑通，输出 `FEC num roots: 2` / `FEC size: 16384 bytes`
+- ✅ `patch avbtool_orig.py < avbtool-android.patch` 应用后 md5 与远端 patched 版一致
+- ✅ `py_compile` avbtool.py + avb_fec.py 通过
+
+**已知风险点**（写进 AOSP_PATCH.md）：
+- FEC 编码布局（row-major：每 255 字节里前 (255-roots) 是数据、后 roots 是 parity）是「自然解释」，**未经 libfec C 实现逐字节互验**（本地无 `fec` 二进制）。首次真机写入后需要跑一次 `avbtool verify_image` 或 A/B 更新
+- 非整块大小输入有 ≤4 字节边界偏差，但 avbtool 调用路径里 image_size 都是 4096 倍数，不受影响
+
+**下一步**：等 CI 绿 → 打 tag `m3.5-fec-pure-python` → M3.5.2 SAF 桥（`/saf/fd/<fd>` 虚拟路径 + Python 侧 monkey-patch `builtins.open` + Kotlin `registerSafFd` 通道）。
+
 ### 22:45 — M3.3 v2 完成，纯 Python RSA 落地（`4d62088`）
 
 **4 处 openssl subprocess 已全部替换**。两个 commit（助手推）+ 一个 Web UI 上传（用户）：
@@ -106,40 +141,4 @@ FileNotFoundError: [Errno 2] No such file or directory: 'maturin'
 
 **Run 109 绿**，`2a7afa8a`。M3.1 交付 6 commits：
 - `4ceb0559` 插件初版（DSL 错，被推翻）
-- `605b3746` 修 Chaquopy 15 DSL：`chaquopy { defaultConfig { version = "3.12" } }`
-- `86d1e703` 移除不存在的 `libs.chaquopy.python` 依赖
-- `9873d7f3` `python_main.py` 入口
-- `cf5230ef` `AvbToolRunnerImpl` 简化版
-- `b32e1996` Application 切换 runner
-- `2a7afa8a` 修 Chaquopy 15 API：`PyObject` 而非 `PyModule`，删除 `useInstance/importModule/getPlatform`
-
-**Chaquopy 15 关键教训**：
-1. `PyModule` 类不存在，用 `py.getModule(name)` 拿 `PyObject`
-2. `Python.useInstance()` / `py.importModule()` / `py.getPlatform()` 不存在
-3. `PyException.value` 不存在，用 `.message`
-4. `PyObject.asString()` 不存在，用 `.toString()`
-5. DSL：`chaquopy { defaultConfig { version = "3.12"; pip { install(...) } } }`
-6. `abiFilters` 在 `android.defaultConfig.ndk`，不在 chaquopy 块
-7. 不写 `implementation(libs.chaquopy.python)`，插件自动注入 runtime AAR
-
-### 20:48 — M2.6+ 完成
-
-Run 93 绿，`e223168`。Home 4 卡片（版本 / 终端入口 / 常用命令 / 运行时状态）+ Terminal 独立路由 + Feature 按 group 分组 + Room schema v2（加 tab 列 + fallbackToDestructiveMigration）。14 files, +1016/-115。
-
-### 20:28 — TerminalScreen TopAppBar 缺 @OptIn 修复
-
-`e223168` 修 CI Run 92 → 93 转绿。
-
----
-
-## 2026-09-08
-
-### 21:10 — 建 `/sdcard/Download/M32_upload/` 上传目录
-
-用户上传 avbtool.py（见 09-09 21:17 条目）。
-
----
-
-## 2026-09-08（M3 之前的历史）
-
-M2 / M2.5 / M2.6+ 详细动作见 `dev-log/CHANGELOG.md`。
+- `605b3746` 修 Chaquopy 15 DSL
