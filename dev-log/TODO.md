@@ -1,6 +1,6 @@
 # TODO — 里程碑清单
 
-> **图例**：✅ = 完成且 CI 绿；◐ = 部分完成；❌ = 未完成；🆕 = 新增子任务
+> **图例**：✅ = 完成且 CI 绿；◐ = 部分完成；❌ = 未完成；🆕 = 新增子任务；↩️ = 回滚
 
 ---
 
@@ -68,18 +68,29 @@
 - [x] 用户通过 GitHub Web UI 上传 `app/src/main/python/avbtool.py`（201397 B, 4935 行, md5 `abff24c4...`）
 - [x] `python_main.py` 更新：除 `version` 外全部命令 dispatch 到 `import avbtool` + argparse
 - [x] 签 tag `m3.2-avbtool-vendored` @ `10f5802c`
-- [ ] 未做的（明确留给 M3.3）：openssl subprocess → cryptography patch、`pip install cryptography`
 
-### M3.3 patch openssl → cryptography ❌（下一步）
+### M3.2.5 固定签名 ✅（Run 151 绿，`931e7cf`）
 
-- [ ] `chaquopy { defaultConfig { pip { install("cryptography==43.0") } } }` 加依赖
-- [ ] 遍历 avbtool.py 的 36 处 `subprocess.call(['openssl', ...])` 替换：
-  - [ ] `openssl rsa -in <key> -modulus -noout`（读公钥模数）→ `cryptography.hazmat.primitives.asymmetric.rsa` 或 DER 解析
-  - [ ] `openssl rsautl -sign -inkey <key> -raw`（RSA 私钥签名）→ `cryptography.hazmat.primitives.asymmetric.padding.PKCS1v15` + `rsa.sign`
-  - [ ] `openssl rsautl -verify -pubin -inkey <der> -raw`（RSA 公钥验签）→ `rsa.verify` with raw padding
-  - [ ] `openssl asn1parse -genconf`（DER 生成）→ `cryptography.hazmat.primitives.serialization.Encoding.DER`
-- [ ] 维护 `patches/avbtool-android.patch`（`git diff` 形式）
-- [ ] 本地或 CI 跑一次 `avbtool --help` 验证
+- [x] 新增 `keystores/dev.keystore`（RSA-2048, PKCS12, `CN=AvbTool Dev`, 有效期 10000 天）
+- [x] `app/build.gradle.kts` 加 `signingConfigs { devFixed { ... } }`，debug + release 都指向它
+- [x] 之后 CI 生成的 APK 签名一致，可直接覆盖安装
+
+### M3.3 patch openssl ❌（回滚 v1，等 v2 方案）
+
+**v1 失败复盘**（Run 122）：
+- 尝试 `pip { install("cryptography==43.0.1") }`，但 chaquo.com/pypi-13.1 **不 mirror** cryptography，PyPI 也没有 Android arm64-v8a wheel，sdist 需要 `maturin` 但 CI 没装
+- 完整日志见 `docs/tech/AOSP_PATCH.md`「为什么 v1 用 cryptography 失败」
+- 回滚 commit：`f8237d6`（撤回 cryptography 依赖）+ `a601808`（恢复 avbtool.py 原始版）
+
+**v2 方案（待实施）**：
+- [ ] 新增 `app/src/main/python/avb_rsa.py`（纯 Python RSA，~200 行，无外部依赖）
+  - [ ] `pow(a,d,n)` 签名/验签
+  - [ ] 手写 PKCS1 v1.5 padding
+  - [ ] 手写 DigestInfo DER 编码（SHA-256）
+  - [ ] 手写 ASN.1 SEQUENCE 解析从 key blob 取 n/e/d
+- [ ] patch avbtool.py 的 4 处 openssl subprocess 调用改为 `from avb_rsa import ...`
+- [ ] 生成 `patches/avbtool-android.patch`（`diff -u` 形式）
+- [ ] 单元测试：用 `openssl rsautl` 生成的签名验证 Python 侧实现
 
 ### M3.4 Kotlin ↔ Python 桥完善 ❌
 
@@ -121,3 +132,6 @@
 | M2.6+ | `m2.6-home-4cards` | `e223168` |
 | M3.1 | （未单独 tag，见 M3.2） | `2a7afa8a` |
 | M3.2 | `m3.2-avbtool-vendored` | `10f5802c` |
+| M3.2.5 | （未 tag） | `931e7cf` |
+
+```
