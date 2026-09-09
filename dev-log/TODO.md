@@ -132,10 +132,10 @@
 - [ ] Kotlin `registerSafFd` 通道（Python ↔ Kotlin fd 传递）
 - [ ] 与 DetailScreen 的 SAF picker 合并实施（M4）
 
-### M3.5.2 收尾 ⏳
+### M3.5.2 收尾 ✅（CI 绿，tag `m3.5.2-io-mmap-tmpdir` @ `5cc5bab`）
 
-- [ ] 等 CI 绿（`2431789` 及之后）
-- [ ] 签 tag `m3.5.2-io-mmap-tmpdir`
+- [x] CI 绿（3 个 Build APK run 全部 success）
+- [x] 签 tag `m3.5.2-io-mmap-tmpdir` @ `5cc5bab`
 
 ## M4 UI 接动作 ❌
 
@@ -168,4 +168,4 @@
 | M3.3 v2 | `m3.3-pure-python-rsa` | `4d62088` |
 | M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
 | M3.5.1 | `m3.5-fec-pure-python` | `ae2a28a` |
-| M3.5.2a+c | （待 CI 绿后打 `m3.5.2-io-mmap-tmpdir`） | `2431789` |
+| M3.5.2a+c | `m3.5.2-io-mmap-tmpdir` | `5cc5bab` |
