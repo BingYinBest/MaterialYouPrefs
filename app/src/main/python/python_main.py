@@ -31,6 +31,17 @@ M3.4 scope
 Add ``__help__`` virtual command: runs ``avbtool <subcmd> --help`` and
 returns the argparse help text. Kotlin-side ``AvbToolRunnerImpl.fetchHelp``
 calls this and feeds the output to ``AvbHelpParser``.
+
+M3.5.2 scope
+------------
+- M3.5.2a: `init_runtime(cache_dir)` — pointed by Kotlin's
+  `AvbToolRunnerImpl.ensureInitialized()`, so `tempfile.NamedTemporaryFile()`
+  (used once inside `avbtool.py`'s `sign()`) lands under the app's private
+  cache dir instead of the system `/tmp`.
+- M3.5.2c: mmap-backed large-file I/O is delegated to `avb_io` (see
+  `avb_io.py`). `avb_fec.encode_fec` uses `avb_io.smart_read`/`smart_write`.
+- M3.5.2b (SAF fd bridge): deferred to M4 UI work — needs a SAF picker
+  to test end-to-end.
 """
 
 import io
@@ -41,9 +52,39 @@ import tempfile
 import time
 import traceback
 
+import avb_io  # M3.5.2a/c: init_runtime() for TMPDIR + mmap helpers
+
 
 _AOSP_HEAD = "386fb90492db3bd6bc484a579bcde5b43a2a0292"
 _AVBTOOL_VERSION = "1.0.0"
+
+# M3.5.2a: tracks whether init_runtime() has been called by the Kotlin side.
+# We keep the flag so we can idempotently call avb_io.init_runtime() (it's
+# cheap and idempotent anyway, but a caller-visible side effect is nice).
+_runtime_initialized: bool = False
+
+
+def init_runtime(cache_dir):
+    """Point tempfile at `cache_dir/avbtool-tmp/`.
+
+    Called from Kotlin's AvbToolRunnerImpl.ensureInitialized() right after
+    we import this module, before any avbtool command runs.
+
+    ``cache_dir`` is ``Context.cacheDir.absolutePath`` on the Android side
+    (typically ``/data/data/<pkg>/cache``). We create a subdir
+    ``avbtool-tmp/`` under it and set ``TMPDIR`` accordingly so
+    ``tempfile.NamedTemporaryFile()`` (used once inside avbtool.py's
+    ``sign()``) writes there instead of the system ``/tmp``.
+
+    Returns True if we rewired TMPDIR this call; False if it was already
+    pointing somewhere (idempotent).
+    """
+    global _runtime_initialized
+    if _runtime_initialized:
+        return False
+    ok = avb_io.init_runtime(cache_dir)
+    _runtime_initialized = True
+    return ok
 
 
 def _success(exit_code, stdout, stderr, duration_ms):
