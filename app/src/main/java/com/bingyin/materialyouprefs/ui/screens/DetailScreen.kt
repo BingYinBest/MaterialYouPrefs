@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -335,7 +336,7 @@ private fun ParamRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (param.default?.isNotBlank() == true) {
+            if (param.default?.isBlank() != true && param.default != null) {
                 Text(
                     text = "默认：${param.default}",
                     style = MaterialTheme.typography.bodySmall,
@@ -387,6 +388,7 @@ private fun ParamRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChoiceRow(
     choices: List<String>,
