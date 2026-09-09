@@ -15,7 +15,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -24,7 +23,6 @@ jobs:
           cache: gradle
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Accept Android SDK licenses
         run: |
           yes | sdkmanager --licenses || true
@@ -49,37 +47,45 @@ jobs:
         run: gradle lintDebug --no-daemon 2>&1 | tee lint.log
       - name: Summarize lint results (M5)
         # Parse the XML lint report (produced by lintDebug) into a
-        # severity-bucketed summary we can eyeball in the Actions UI
-        # and also commit to dev-log/lint-baseline.md for tracking
-        # issue counts across commits.
+        # severity-bucketed summary we can eyeball in the Actions UI.
+        #
+        # NOTE: This whole block runs inside a YAML literal block scalar
+        # (run: |). EVERY shell line must be indented >= 10 spaces to stay
+        # inside the block; a zero-indent shell line breaks YAML parsing
+        # and the workflow fails before any step executes. Keep all
+        # commands at indent >= 10 and avoid embedding shell command
+        # substitution in a here-doc.
         if: always()
         run: |
           echo "### Lint summary" >> "$GITHUB_STEP_SUMMARY"
           XML="app/build/reports/lint-results-debug.xml"
           HTML="app/build/reports/lint-results-debug.html"
           if [ ! -f "$XML" ]; then
-            echo "lint XML not produced — lint step probably failed early" >> "$GITHUB_STEP_SUMMARY"
-            echo "```
-$(tail -20 lint.log 2>/dev/null || echo '(no lint.log)')" >> "$GITHUB_STEP_SUMMARY"
+            echo "lint XML not produced -- lint step probably failed early" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -20 lint.log 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "(no lint.log)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # The XML uses one <issue> element per finding with a
-          # 'severity' attribute (Error / Warning / Fatal).
+          # 'severity' attribute (Fatal / Error / Warning).
           total=$(grep -oE '<issue[^>]*' "$XML" | wc -l)
           fatal=$(grep -oE '<issue[^>]*severity="Fatal"' "$XML" | wc -l)
           errors=$(grep -oE '<issue[^>]*severity="Error"' "$XML" | wc -l)
           warns=$(grep -oE '<issue[^>]*severity="Warning"' "$XML" | wc -l)
-          echo "| severity | count |"
-          echo "|----------|-------|"
-          echo "| Fatal    | $fatal |"
-          echo "| Error    | $errors |"
-          echo "| Warning  | $warns |"
-          echo "| **Total**    | **$total** |"
-          echo ""
-          echo "Top 15 lint IDs (by frequency):" >> "$GITHUB_STEP_SUMMARY"
-          grep -oE 'id="[A-Z][A-Za-z]+"' "$XML" | sort | uniq -c | sort -rn | head -15 >> "$GITHUB_STEP_SUMMARY"
-          echo ""
-          echo "HTML report: $HTML" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "| severity | count |"
+            echo "|----------|-------|"
+            echo "| Fatal    | $fatal |"
+            echo "| Error    | $errors |"
+            echo "| Warning  | $warns |"
+            echo "| **Total**    | **$total** |"
+            echo ""
+            echo "Top 15 lint IDs (by frequency):"
+            grep -oE 'id="[A-Z][A-Za-z]+"' "$XML" | sort | uniq -c | sort -rn | head -15
+            echo ""
+            echo "HTML report: $HTML"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload logs on failure
         if: failure() || steps.build.outcome == 'failure' || steps.test.outcome == 'failure' || steps.lint.outcome == 'failure'
         uses: actions/upload-artifact@v4
