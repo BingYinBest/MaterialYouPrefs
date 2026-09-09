@@ -141,4 +141,27 @@ FileNotFoundError: [Errno 2] No such file or directory: 'maturin'
 
 **Run 109 绿**，`2a7afa8a`。M3.1 交付 6 commits：
 - `4ceb0559` 插件初版（DSL 错，被推翻）
-- `605b3746` 修 Chaquopy 15 DSL
+- `605b3746` 修 Chaquopy 15 DSL：`chaquopy { setup { python { version = "3.11" } } }`
+
+**踩坑清单**（Chaquopy 15 API）：
+- 没有 `PyModule` 类型，用 `PyObject = py.getModule(name)`
+- 没有 `Python.useInstance` / `py.importModule`，只有 `Python.getInstance()`
+- `PyObject.toString()` 返回 Python `str()` 的结果（不是 Java 的 `String` 转换）
+- `PyException` 没有 `.value`，用 `.message`（含 trace）
+- Chaquopy 15 DSL：`chaquopy { setup { python { version = "3.11" } } }`
+
+**下一步**：M3.2（用户上传 AOSP avbtool.py 到 `app/src/main/python/`）。
+
+---
+
+## 2026-09-08
+
+### 21:10 — 建 `/sdcard/Download/M32_upload/` 上传目录
+
+用户上传 avbtool.py（见 09-09 21:17 条目）。
+
+---
+
+## 2026-09-08（M3 之前的历史）
+
+M2 / M2.5 / M2.6+ 详细动作见 `dev-log/CHANGELOG.md`。
