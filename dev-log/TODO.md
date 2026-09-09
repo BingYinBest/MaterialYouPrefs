@@ -27,7 +27,7 @@
 - [x] Room entity / dao / db / repo 全套
 - [x] `AvbToolRunner` 接口（7 方法：run / fetchHelp / aospHead / isFecLoaded / stageInput / promoteToOutput / cleanupTemp）
 - [x] `AvbExecutionRequest` / `AvbExecutionResult` / `OutputFile` model
-- [x] `CommandSeedModels`（kotlinx.serialization）
+- [x] `CommandSeedModels`（kxlsx.serialization）
 - [x] `AvbHelpParser`（argparse `--help` 解析器）
 - [x] `CommandRepository`（seed + 24h 缓存 + fallback）
 
@@ -75,28 +75,29 @@
 - [x] `app/build.gradle.kts` 加 `signingConfigs { devFixed { ... } }`，debug + release 都指向它
 - [x] 之后 CI 生成的 APK 签名一致，可直接覆盖安装
 
-### M3.3 patch openssl ❌（回滚 v1，等 v2 方案）
+### M3.3 patch openssl ✅（v2 纯 Python RSA，`4d62088`，待 CI 绿确认 tag）
 
 **v1 失败复盘**（Run 122）：
 - 尝试 `pip { install("cryptography==43.0.1") }`，但 chaquo.com/pypi-13.1 **不 mirror** cryptography，PyPI 也没有 Android arm64-v8a wheel，sdist 需要 `maturin` 但 CI 没装
 - 完整日志见 `docs/tech/AOSP_PATCH.md`「为什么 v1 用 cryptography 失败」
 - 回滚 commit：`f8237d6`（撤回 cryptography 依赖）+ `a601808`（恢复 avbtool.py 原始版）
 
-**v2 方案（待实施）**：
-- [ ] 新增 `app/src/main/python/avb_rsa.py`（纯 Python RSA，~200 行，无外部依赖）
-  - [ ] `pow(a,d,n)` 签名/验签
-  - [ ] 手写 PKCS1 v1.5 padding
-  - [ ] 手写 DigestInfo DER 编码（SHA-256）
-  - [ ] 手写 ASN.1 SEQUENCE 解析从 key blob 取 n/e/d
-- [ ] patch avbtool.py 的 4 处 openssl subprocess 调用改为 `from avb_rsa import ...`
-- [ ] 生成 `patches/avbtool-android.patch`（`diff -u` 形式）
-- [ ] 单元测试：用 `openssl rsautl` 生成的签名验证 Python 侧实现
+**v2 已实施**：
+- [x] `app/src/main/python/avb_rsa.py`（241 行，零外部依赖）：
+  - [x] `pow(a,d,n)` 签名/验签
+  - [x] 手写 PKCS1 v1.5 padding（由 avbtool 传入，avb_rsa 只负责 pow）
+  - [x] 手写 DigestInfo DER 编码（SHA-256/512）
+  - [x] 手写 ASN.1 SEQUENCE 解析从 key blob 取 n/e/d（PKCS#8 + 传统 RSAPrivateKey + SubjectPublicKeyInfo + AVB raw）
+- [x] patch avbtool.py 的 4 处 openssl subprocess 调用：`RSAPublicKey.__init__` / `sign()` / `verify_vbmeta_signature()` + `import avb_rsa`
+- [x] 生成 `patches/avbtool-android.patch`（137 行 unified diff，4 处 hunk）
+- [x] 本地互验：openssl genrsa 2048 生成的签名 == `avb_rsa.rsa_sign_raw` 输出（逐字节一致）；篡改 1 字节正确拒绝
 
-### M3.4 Kotlin ↔ Python 桥完善 ◐
+### M3.4 Kotlin ↔ Python 桥完善 ✅（Run 163 绿，`8eecab3`）
 
 - [x] `python_main.py` 加 `__help__` 虚拟命令：`{"commandName": "__help__", "args": ["<subcmd>"]}` → dispatch 到 `<subcmd> --help`
 - [x] `fetchHelp` 真实现：Kotlin 侧 `AvbToolRunnerImpl.fetchHelp()` 调 `__help__` 命令 → 管道 `AvbHelpParser.parse()` → 返回 `List<CommandParam>`（commit `8eecab3`）
 - [ ] `stageInput` / `promoteToOutput` 的 SAF bridge（留 M3.5）
+- [x] 签 tag `m3.4-fetchhelp-real` @ `8eecab3`
 
 ### M3.5 SAF 桥 + FEC ❌
 
@@ -134,6 +135,5 @@
 | M3.1 | （未单独 tag，见 M3.2） | `2a7afa8a` |
 | M3.2 | `m3.2-avbtool-vendored` | `10f5802c` |
 | M3.2.5 | （未 tag） | `931e7cf` |
+| M3.3 v2 | （待 CI 绿后 tag `m3.3-pure-python-rsa`） | `4d62088` |
 | M3.4 | `m3.4-fetchhelp-real` | `8eecab3` |
-
-```
