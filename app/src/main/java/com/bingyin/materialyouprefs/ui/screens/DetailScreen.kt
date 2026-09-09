@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package com.bingyin.materialyouprefs.ui.screens
 
 import androidx.compose.foundation.background
@@ -76,6 +74,7 @@ import com.bingyin.materialyouprefs.ui.viewmodel.DetailViewModel
  * fd-bridge; M4.1 always runs with empty SAF inputs and lets the runner
  * use its copy-through-tempfile path.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     itemId: String,
