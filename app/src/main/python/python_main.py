@@ -40,8 +40,8 @@ M3.5.2 scope
   cache dir instead of the system `/tmp`.
 - M3.5.2c: mmap-backed large-file I/O is delegated to `avb_io` (see
   `avb_io.py`). `avb_fec.encode_fec` uses `avb_io.smart_read`/`smart_write`.
-- M3.5.2b (SAF fd bridge): deferred to M4 UI work — needs a SAF picker
-  to test end-to-end.
+- M3.5.2b (SAF fd bridge): deferred to M4.2c — needs a SAF picker to test
+  end-to-end; M4.2b uses the stage+promote path (see ``_collect_workdir_files``).
 """
 
 import io
@@ -87,13 +87,18 @@ def init_runtime(cache_dir):
     return ok
 
 
-def _success(exit_code, stdout, stderr, duration_ms):
+def _success(exit_code, stdout, stderr, duration_ms, generated_files=None):
+    """Serialize a Success envelope. ``generated_files`` (M4.2b) is an
+    ordered list of absolute paths created by avbtool during this call;
+    the Kotlin runner uses them to promote the freshest one to a SAF Uri
+    when the user picked an output destination."""
     return json.dumps({
         "kind": "Success",
         "exitCode": exit_code,
         "stdout": stdout,
         "stderr": stderr,
         "durationMs": duration_ms,
+        "generatedFiles": list(generated_files or []),
     })
 
 
@@ -120,15 +125,32 @@ def _handle_version(_args):
     return _success(0, json.dumps(info), "", duration)
 
 
-def _handle_avbtool_command(command, args):
+def _collect_workdir_files(workdir):
+    """Return absolute paths of regular files inside ``workdir``. Used by
+    ``_handle_avbtool_command`` to report files avbtool wrote during the
+    run (M4.2b). The tmpdir is fresh per run, so anything inside is
+    considered output."""
+    out = []
+    try:
+        for name in sorted(os.listdir(workdir)):
+            full = os.path.join(workdir, name)
+            if os.path.isfile(full):
+                out.append(full)
+    except OSError:
+        pass
+    return out
+
+
+def _handle_avbtool_command(command, args, workdir=None):
     """Import avbtool.py and dispatch one subcommand.
 
     We re-implement the ``__main__`` block of avbtool.py so the
     argparse parser is exercised end-to-end (help / error paths
     included).
 
-    The call happens in a temporary working directory so relative
-    output paths created by avbtool land somewhere predictable.
+    If ``workdir`` is given, the process is ``chdir``'d into it for the
+    duration of the call so that relative ``--output=...`` paths produced
+    by avbtool land somewhere predictable (M4.2b).
     """
     import avbtool as _avbtool  # noqa: F401 -- triggers vendored module load
 
@@ -141,7 +163,10 @@ def _handle_avbtool_command(command, args):
     buf_err = io.StringIO()
     sys.stdout = buf_out
     sys.stderr = buf_err
+    old_cwd = os.getcwd() if workdir else None
     try:
+        if workdir:
+            os.chdir(workdir)
         tool = _avbtool.AvbTool()
         try:
             tool.run(argv)
@@ -151,12 +176,19 @@ def _handle_avbtool_command(command, args):
     finally:
         sys.stdout, sys.stderr = old_stdout, old_stderr
         sys.argv = old_argv
+        if workdir and old_cwd:
+            try:
+                os.chdir(old_cwd)
+            except OSError:
+                pass
 
+    generated = _collect_workdir_files(workdir) if workdir else []
     return _success(
         exit_code,
         buf_out.getvalue(),
         buf_err.getvalue(),
         0,  # duration filled by caller
+        generated_files=generated,
     )
 
 
@@ -195,7 +227,7 @@ def run(args_json):
     # Everything else goes through avbtool.py.
     tmpdir = tempfile.mkdtemp(prefix="avbtool-", dir=os.getcwd() or None)
     try:
-        result = _handle_avbtool_command(command, argv)
+        result = _handle_avbtool_command(command, argv, workdir=tmpdir)
     except ModuleNotFoundError as e:
         duration = int((time.monotonic() - started) * 1000)
         return _failure(
