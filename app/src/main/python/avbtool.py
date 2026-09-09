@@ -37,13 +37,6 @@ import sys
 import tempfile
 import time
 
-# M3.3 patch: replace `openssl` subprocess calls with the `cryptography`
-# package (installed via Chaquopy `pip { install("cryptography==43.0") }`).
-# See docs/tech/AOSP_PATCH.md for details.
-from cryptography.hazmat.primitives import hashes, padding, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.backends import default_backend
-
 # Keep in sync with libavb/avb_version.h.
 AVB_VERSION_MAJOR = 1
 AVB_VERSION_MINOR = 2
@@ -373,39 +366,27 @@ class RSAPublicKey(object):
     # but unfortunately PyCrypto is not available in the builder. So
     # instead just parse openssl(1) output to get this
     # information. It's ugly but...
-    # M3.3: use cryptography.hazmat instead of shelling out to openssl.
-    with open(key_path, 'rb') as f:
-      key_bytes = f.read()
-    try:
-      # Try private key first (openssl rsa default behavior)
-      try:
-        private_key = serialization.load_pem_private_key(
-            key_bytes, password=None, backend=default_backend())
-      except ValueError:
-        try:
-          private_key = serialization.load_der_private_key(
-              key_bytes, password=None, backend=default_backend())
-        except ValueError:
-          raise AvbError('Error getting public key: could not parse as PEM or DER private key')
-      if not isinstance(private_key, rsa.RSAPrivateKey):
-        raise AvbError('Error getting public key: not an RSA key')
-      key_numbers = private_key.public_key().public_numbers()
-    except AvbError:
-      # Try public key
-      try:
-        try:
-          public_key = serialization.load_pem_public_key(
-              key_bytes, backend=default_backend())
-        except ValueError:
-          public_key = serialization.load_der_public_key(
-              key_bytes, backend=default_backend())
-        if not isinstance(public_key, rsa.RSAPublicKey):
-          raise AvbError('Error getting public key: not an RSA public key')
-        key_numbers = public_key.public_numbers()
-      except Exception as e:
-        raise AvbError('Error getting public key: {}'.format(e))
+    args = ['openssl', 'rsa', '-in', key_path, '-modulus', '-noout']
+    p = subprocess.Popen(args,
+                         stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+    (pout, perr) = p.communicate()
+    if p.wait() != 0:
+      # Could be just a public key is passed, try that.
+      args.append('-pubin')
+      p = subprocess.Popen(args,
+                           stdin=subprocess.PIPE,
+                           stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE)
+      (pout, perr) = p.communicate()
+      if p.wait() != 0:
+        raise AvbError('Error getting public key: {}'.format(perr))
 
-    modulus_hexstr = hex(key_numbers.n)[2:]
+    if not pout.lower().startswith(self.MODULUS_PREFIX):
+      raise AvbError('Unexpected modulus output')
+
+    modulus_hexstr = pout[len(self.MODULUS_PREFIX):]
 
     # The exponent is assumed to always be 65537 and the number of
     # bits can be derived from the modulus by rounding up to the
@@ -499,22 +480,16 @@ class RSAPublicKey(object):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
       else:
-        # M3.3: sign with cryptography. avbtool packs PKCS1-v1.5 padding +
-        # digest into padding_and_hash already. Passing algorithm=None to
-        # cryptography treats the input as a pre-computed digest, matching
-        # `openssl rsautl -raw` semantics.
-        with open(self.key_path, 'rb') as f:
-          key_bytes = f.read()
-        try:
-          private_key = serialization.load_pem_private_key(
-              key_bytes, password=None, backend=default_backend())
-        except ValueError:
-          private_key = serialization.load_der_private_key(
-              key_bytes, password=None, backend=default_backend())
-        signature = private_key.sign(
-            padding_and_hash,
-            padding=padding.PKCS1v15(),
-            algorithm=None)
+        p = subprocess.Popen(
+            ['openssl', 'rsautl', '-sign', '-inkey', self.key_path, '-raw'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+      (pout, perr) = p.communicate(padding_and_hash)
+      retcode = p.wait()
+      if retcode != 0:
+        raise AvbError('Error signing: {}'.format(perr))
+      signature = pout
     if len(signature) != algorithm.signature_num_bytes:
       raise AvbError('Error signing: Invalid length of signature')
     return signature
@@ -625,20 +600,46 @@ def verify_vbmeta_signature(vbmeta_header, vbmeta_blob):
   #
   # but since 'avbtool verify_image' is used on the builders we don't want
   # to rely on Crypto.PublicKey.RSA. Instead just use openssl(1) to verify.
-  # M3.3: verify via cryptography. Reconstruct the RSA public key from the
-  # modulus/exponent parsed out of the vbmeta blob. algorithm=None means
-  # the input is already a digest (matches `openssl rsautl -verify -raw`).
-  try:
-    public_key = rsa.RSAPublicNumbers(
-        e=exponent, n=modulus).public_key(backend=default_backend())
-    public_key.verify(
-        sig_blob,
-        padding_and_digest,
-        padding=padding.PKCS1v15(),
-        algorithm=None)
-  except Exception as e:
-    sys.stderr.write('Signature not correct: {}'.format(e))
-    return False
+  asn1_str = ('asn1=SEQUENCE:pubkeyinfo\n'
+              '\n'
+              '[pubkeyinfo]\n'
+              'algorithm=SEQUENCE:rsa_alg\n'
+              'pubkey=BITWRAP,SEQUENCE:rsapubkey\n'
+              '\n'
+              '[rsa_alg]\n'
+              'algorithm=OID:rsaEncryption\n'
+              'parameter=NULL\n'
+              '\n'
+              '[rsapubkey]\n'
+              'n=INTEGER:{}\n'
+              'e=INTEGER:{}\n').format(hex(modulus).rstrip('L'),
+                                       hex(exponent).rstrip('L'))
+
+  with tempfile.NamedTemporaryFile() as asn1_tmpfile:
+    asn1_tmpfile.write(asn1_str.encode('ascii'))
+    asn1_tmpfile.flush()
+
+    with tempfile.NamedTemporaryFile() as der_tmpfile:
+      p = subprocess.Popen(
+          ['openssl', 'asn1parse', '-genconf', asn1_tmpfile.name, '-out',
+           der_tmpfile.name, '-noout'])
+      retcode = p.wait()
+      if retcode != 0:
+        raise AvbError('Error generating DER file')
+
+      p = subprocess.Popen(
+          ['openssl', 'rsautl', '-verify', '-pubin', '-inkey', der_tmpfile.name,
+           '-keyform', 'DER', '-raw'],
+          stdin=subprocess.PIPE,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.PIPE)
+      (pout, perr) = p.communicate(sig_blob)
+      retcode = p.wait()
+      if retcode != 0:
+        raise AvbError('Error verifying data: {}'.format(perr))
+      if pout != padding_and_digest:
+        sys.stderr.write('Signature not correct\n')
+        return False
   return True
 
 
