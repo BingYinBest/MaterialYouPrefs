@@ -375,7 +375,7 @@ private fun ParamRow(
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
-            if (param.default?.isBlank() != true) {
+            if (param.default?.isNotBlank() == true) {
                 Text(
                     text = "默认：${param.default}",
                     style = MaterialTheme.typography.bodySmall,
