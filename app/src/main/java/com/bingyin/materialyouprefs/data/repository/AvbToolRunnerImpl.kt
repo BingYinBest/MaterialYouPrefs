@@ -46,6 +46,8 @@ import javax.inject.Singleton
  *   - M3.4: `fetchHelp()` is now real -- it shells out to
  *     `python_main.run` with the `__help__` virtual command and pipes the
  *     argparse help output through [AvbHelpParser].
+ *   - M3.5.1: FEC now ships via pure-Python RS encoder (`avb_fec.py`);
+ *     `FEC_LOADED` is set to `true` so the UI can surface the flag.
  *
  * Chaquopy 15 API notes:
  *   - There is no `PyModule` class. Use `PyObject` from `py.getModule(name)`.
@@ -231,9 +233,10 @@ class AvbToolRunnerImpl @Inject constructor(
         const val AOSP_HEAD = "386fb90492db3bd6bc484a579bcde5b43a2a0292"
 
         /**
-         * Whether the FEC native library (libavbfec.so) is bundled.
-         * Kept false until M3.5 lands.
+         * Whether FEC support is available. Since M3.5.1 it ships as a
+         * pure-Python RS(255, 253) encoder in `avb_fec.py` (no native
+         * `.so` needed). Set true so the UI can surface the flag.
          */
-        const val FEC_LOADED: Boolean = false
+        const val FEC_LOADED: Boolean = true
     }
 }
