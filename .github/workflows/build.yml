@@ -42,7 +42,23 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace --warning-mode all
+        id: build
+        continue-on-error: true
+        run: gradle assembleDebug --no-daemon --stacktrace --warning-mode all 2>&1 | tee build.log
+
+      - name: Upload build.log on failure
+        if: failure() || steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: |
+            build.log
+            **/build.gradle.kts
+          retention-days: 7
+
+      - name: Fail build if step failed
+        if: steps.build.outcome == 'failure'
+        run: exit 1
 
       - name: Upload APK artifact
         if: success()
