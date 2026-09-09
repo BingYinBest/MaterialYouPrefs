@@ -471,8 +471,8 @@ private fun ParamRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChoiceRow(
-    choices: List<String>
-, value: String,
+    choices: List<String>,
+    value: String,
     enabled: Boolean,
     onChange: (String) -> Unit,
 ) {
