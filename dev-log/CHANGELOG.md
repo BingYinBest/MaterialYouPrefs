@@ -3,6 +3,22 @@
 
 ## 2026-09-09
 
+### 21:44 — M3.3 v1 失败回滚 + M3.2.5 签名固定（Run 151 绿，`931e7cf`）
+
+**回滚**：撤回 cryptography 依赖，avbtool.py 恢复原始版。CI Run 122 失败根因：`cryptography` 在 chaquo.com/pypi-13.1 无 mirror、PyPI 无 Android arm64 wheel、sdist 需 maturin 但 CI 没装。
+
+**M3.2.5 固定签名**：
+- 新增 `keystores/dev.keystore`（RSA-2048, PKCS12, `CN=AvbTool Dev`, 有效期 10000 天）
+- `app/build.gradle.kts` 加 `signingConfigs { devFixed }`，debug + release 都指向它
+- **从下一次成功 CI 开始，下载 APK 后可直接覆盖安装，无需卸载**
+
+**文档**：
+- `docs/tech/AOSP_PATCH.md` 补 M3.3 v1 失败根因 + v2 纯 Python RSA 方案（`6a66b21`）
+- `dev-log/DEVLOG.md` 补 21:44 条目（`6ccc567`）
+- `dev-log/TODO.md` 补 M3.2.5 + M3.3 回滚 + tag 一览（`5ab7b17`）
+
+**下一步**：M3.3 v2 纯 Python RSA，或先 M3.4/M3.5。
+
 ### 21:25 — 文档体系完善
 
 推送 4 个文档 commit：
@@ -54,7 +70,7 @@ Chaquopy 15 基础集成。6 个 commit 链：
 
 ### 02:55 — Rebase feat/avbtool 到 origin/main
 
-发现两个 main 的历史是独立分支（本地 main 从 `98c8125` 起、remote main 从 `b6831d5` 起），因此不能用普通 rebase，改用 `git rebase --onto origin/main 98c8125 feat/avbtool`，把 feat/avbtool 的 3 个 commit 移到 `dbc824e` 之上。docs + M1/M2 commit 自动合并干净；只有 CI 修复 commit 有 build.yml 冲突，手工合并：(a) 保留 remote 的 `android-actions/setup-android@v3` + `sdkmanager --licenses` + `sdkmanager "platforms;android-35"` 等 CI 修复步骤；(b) 保留本分支新增的 `'feat/**'` 分支触发器 + `--stacktrace` + `if: success()` 修复 upload-artifact 缩进错乱；(c) libs.versions.toml 自动合并保留 remote 显式 BOM 版本 + 本分支 room/chaquopy/coroutines/serialization/javax-inject。**额外决策**：发现 `chaquopy` 块的 `sourceDirs = src/main/python` 目前只有 `.gitkeep`（空目录），Chaquopy plugin 可能拒绝空 sourceDirs，因此在 M3 之前把 `chaquopy {}` 块整个注释掉，toml 里的 plugin/dep 定义保留、M3 打开即可。
+发现两个 main 的历史是独立分支（本地 main 从 `98c8125` 起、remote main 从 `b6831d5` 起），因此不能用普通 rebase，改用 `git rebase --onto origin/main 98c8125 feat/avbtool`，把 feat/avbtool 的 3 个 commit 移到 `dbc824e` 之上。docs + M1/M2 commit 自动合并干净；只有 CI 修复 commit 有 build.yml 冲突，手工合并：(a) 保留 remote 的 `android-actions/setup-android@v3` + `sdkmanager --licenses` + `sdkmanager "platforms;android-35"` 等 CI 步骤；(b) 保留本分支新增的 `'feat/**'` 分支触发器 + `--stacktrace` + `if: success()` 修复 upload-artifact 缩进错乱；(c) libs.versions.toml 自动合并保留 remote 显式 BOM 版本 + 本分支 room/chaquopy/coroutines/serialization/javax-inject。**额外决策**：发现 `chaquopy` 块的 `sourceDirs = src/main/python` 目前只有 `.gitkeep`（空目录），Chaquopy plugin 可能拒绝空 sourceDirs，因此在 M3 之前把 `chaquopy {}` 块整个注释掉，toml 里的 plugin/dep 定义保留、M3 打开即可。
 
 ### 02:40 — CI 加固（3 个阻断点）
 
