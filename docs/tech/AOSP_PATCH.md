@@ -4,7 +4,7 @@
 
 `/root/avb/avbtool.py`（HEAD `386fb90492db3bd6bc484a579bcde5b43a2a0292`, 分支 `android14-release`）
 
-## 当前状态（M3.5.1 → ae2a28a）
+## 当前状态（M3.5.2a+c → b0e3bf8）
 
 **7 处 subprocess 已全部替换为纯 Python**（4 处 openssl RSA + 3 处 FEC RS），patched avbtool.py 已由用户 Web UI 上传至 `app/src/main/python/avbtool.py`（md5 `c2d98022...`）。配套：
 - `app/src/main/python/avb_rsa.py`（241 行，无外部依赖）
@@ -13,7 +13,7 @@
 两者本地互验通过（RSA 逐字节匹配 openssl；FEC 输出可被 `info_image` 完整解析，`--generate_fec` 全路径跑通）。
 
 剩余：
-- 文件打开 / 临时目录 / SAF 桥（留给 M3.5.2）
+- SAF fd 桥（`/saf/fd/<id>` 虚拟路径）—— 留给 M3.5.2b，延后到 M4 UI 一起做
 
 ## Patch 清单
 
@@ -21,8 +21,9 @@
 |---|---|---|---|
 | OpenSSL 调用（4 处） | `subprocess.check_output(['openssl', ...])` | ✅ 纯 Python RSA（`avb_rsa.py`，`pow(a,d,n)` + 手写 PKCS1 v1.5 + DigestInfo DER） | **M3.3 v2 完成** |
 | FEC 调用（2 处） | `subprocess.run(['fec', ...])` | ✅ 纯 Python RS(255,253) GF(256)（`avb_fec.py`，libfec 公式 + 60 字节 footer） | **M3.5.1 完成** |
-| 文件打开 | `open(path, 'rb+')` | `saf_open(path)`（识别 `/saf/fd/` 前缀走 SAF） | M3.5.2（待做） |
-| 临时目录 | `/tmp` | `os.environ['TMPDIR']` = app cache dir | M3.5.2（待做） |
+| 临时目录 | `/tmp` | ✅ `os.environ['TMPDIR']` = `cacheDir/avbtool-tmp/`（`python_main.init_runtime()` 由 Kotlin `ensureInitialized()` 触发） | **M3.5.2a 完成** |
+| 大文件 I/O | `f.read()`/`f.write()` 整份入 Python 堆 | ✅ `avb_io.smart_read/smart_write`，≥32MB 走 `mmap` | **M3.5.2c 完成** |
+| 文件打开（SAF fd 桥） | `open(path, 'rb+')` 无法直接访问 `content://` | 目前用 Kotlin `stageInput`/`promoteToOutput` 拷贝方案；fd 桥 `/saf/fd/<id>` 前缀延后到 M4 | M3.5.2b（延后到 M4 UI） |
 
 ## 4 处 openssl subprocess 明细（已全部替换）
 
@@ -30,7 +31,7 @@
 |------|--------|------|--------|
 | `RSAPublicKey.__init__` L366-384 | `openssl rsa -in <key> -modulus -noout` | 从私钥/公钥解析模数 n | `avb_rsa.parse_modulus(key_path)` |
 | `sign()` L480-490 | `openssl rsautl -sign -inkey <key> -raw` | 用私钥对 padding_and_hash 签名 | `avb_rsa.parse_key_file` + `avb_rsa.rsa_sign_raw(d, n, em)` |
-| `verify_vbmeta_signature()` L600-635 | `openssl asn1parse -genconf` + `openssl rsautl -verify -raw` | 用公钥验证签名 | `avb_rsa.rsa_verify_raw(n, e, padding_and_digest, sig_blob)` |
+| `verify_vbmeta_signature()` L600-635 | `openssl asn1parse -genconf` + `openssl rsautl -verify -raw` | 用公键验证签名 | `avb_rsa.rsa_verify_raw(n, e, padding_and_digest, sig_blob)` |
 | P1 import | — | — | `import avb_rsa`（在 `import time` 之后） |
 
 ## 2 处 FEC subprocess 明细（已全部替换）
@@ -146,7 +147,7 @@ return recovered.to_bytes(...) == padding_and_digest
 ```python
 fec_data_size(image_size, num_roots) -> int         # 与 libfec fec_ecc_get_size 一致
 encode_fec_buffer(input_bytes, num_roots) -> bytes  # 返回 parity + footer
-encode_fec(input_path, output_path, num_roots)      # 磁盘��
+encode_fec(input_path, output_path, num_roots)      # 磁盘版
 ```
 
 ### 单元测试覆盖
@@ -168,6 +169,55 @@ python3 avbtool.py add_hashtree_footer --image img.img \
 ```
 
 输出镜像经 `info_image` 完整解析，`FEC num roots: 2` / `FEC size: 16384 bytes` 符合预期。
+
+## M3.5.2 IO 优化（a+c 完成，b 延后）
+
+M3.5.2 拆三个子任务，a+c 已落地，b 延后到 M4 UI：
+
+### M3.5.2a — tempfile 落到 app cache dir ✅
+
+**问题**：`avbtool.py` 里 `sign()` 用 `tempfile.NamedTemporaryFile()` 写签名临时文件；Android target SDK 24+ 上 `/tmp` 不保证可写。
+
+**方案**：新增 `python_main.init_runtime(cache_dir)`，把 `os.environ['TMPDIR']` 指到 `cache_dir/avbtool-tmp/`。Kotlin 侧 `AvbToolRunnerImpl.ensureInitialized()` 在首次 `py.getModule("python_main")` 之后立即调一次。
+
+```kotlin
+val mod = py.getModule("python_main")
+pyModule = mod
+runCatching {
+    val cachePath = appContext.cacheDir.absolutePath
+    mod.call("init_runtime", cachePath)
+}.onFailure { t ->
+    Log.w(TAG, "init_runtime() failed (non-fatal): ${t.message}")
+}
+```
+
+失败不阻断 avbtool 流程（`runCatching`），因为 avbtool 大多数命令并不用 tempfile。
+
+### M3.5.2c — 大文件 mmap ✅
+
+**问题**：`avb_fec.encode_fec` 用 `f.read()` 整份读入内存 + `f.write()` 整份写出。128 MB 镜像在 Python 堆里放两份（输入 + parity 输出）压力偏大。
+
+**方案**：新增 `app/src/main/python/avb_io.py`：
+
+```python
+MMAP_THRESHOLD_BYTES = 32 * 1024 * 1024  # 32 MB
+
+def smart_read(path):
+    """mmap 读取大文件（≥32MB），返回 (bytes, None)"""
+
+def smart_write(path, data):
+    """mmap 写入大数据（≥32MB），先 truncate 到目标长度，MAP_SHARED 映射后 mapper[:] = data"""
+```
+
+`avb_fec.encode_fec` 里 `f.read()` → `avb_io.smart_read(...)`、`f.write(out)` → `avb_io.smart_write(...)`。
+
+**为什么阈值是 32MB**：mmap 有 page-fault 开销，小文件（几十 KB 的 key、几十 MB 的 hash tree）直接 read/write 更快；32MB 是粗略的临界点，实测 4MB 镜像走 mmap 反而慢。
+
+**局限**：`bytes(mapper)` 复制会把数据拷到 Python 堆里一次，`smart_read` 只降低**读入时的系统调用次数**（`read` 系统调用 vs 一次性 `mmap + memcpy`）。`encode_fec_buffer` 内部还要构造 padded/parity，实际内存峰值没减少一半。要真正零拷贝需要在 `encode_fec_buffer` 里改成分块处理，那是 M4+ 的事。
+
+### M3.5.2b — SAF fd 桥（延后到 M4 UI）
+
+真正的 fd 桥（`/saf/fd/<id>` 虚拟路径 + `builtins.open` monkey-patch）需要 Kotlin `registerSafFd(uri) → fd` 通道，Python 侧维护 fd→URI 表并拦截 open 调用。目前用 Kotlin `stageInput`/`promoteToOutput` 拷贝方案就够用，fd 桥是**优化非必需**。延后到 M4 跟 DetailScreen 的 SAF 输入选择器一起落地（没有 picker 无法端到端验证）。
 
 ## Patch 文件维护
 
