@@ -5,7 +5,7 @@ import com.bingyin.materialyouprefs.data.db.AvbDatabase
 import com.bingyin.materialyouprefs.data.repository.AvbToolRunnerImpl
 import com.bingyin.materialyouprefs.data.repository.CommandRepository
 import com.bingyin.materialyouprefs.data.repository.NoopAvbToolRunner
-import com.chaquo.python.PyApplication
+import com.chaquo.python.android.PyApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,15 +21,26 @@ import kotlinx.coroutines.launch
  * 3. Never crash the app on data-layer errors: seed failure is logged
  *    and stashed on [AppState.seedFailure].
  *
- * IMPORTANT (v1.0.0 hotfix): extends [PyApplication], NOT android.app.Application.
- * Chaquopy 15 requires the Python runtime to be initialised with an
- * `AndroidPlatform` on Android (which needs a Context). [PyApplication] does
- * that automatically in its own `onCreate` before our override runs -- so by
- * the time [AvbToolRunnerImpl.ensureInitialized] calls `Python.getInstance()`
- * (which happens on a worker thread via `withContext(Dispatchers.IO)`), the
- * runtime is already live. Extending plain `Application` used to crash with
- * "RuntimeException: Cannot use GenericPlatform on Android" on the first
- * avbtool command.
+ * IMPORTANT (v1.0.0 hotfix):
+ *   - Extends [PyApplication] from `com.chaquo.python.android` (NOT
+ *     `com.chaquo.python.PyApplication` -- that path does not exist in
+ *     Chaquopy 15; the class lives in the `android` subpackage).
+ *   - [PyApplication.onCreate] runs `Python.start(new AndroidPlatform(this))`
+ *     for us. Without it, the first avbtool command crashes with
+ *     `RuntimeException: Cannot use GenericPlatform on Android` because
+ *     the default platform on Android is the JVM GenericPlatform.
+ *   - The Chaquopy PyApplication source (verified against 15.0.1):
+ *     ```java
+ *     package com.chaquo.python.android;
+ *     public class PyApplication extends Application {
+ *         @Override public void onCreate() {
+ *             super.onCreate();
+ *             Python.start(new AndroidPlatform(this));
+ *         }
+ *     }
+ *     ```
+ *   - Because it extends `android.app.Application`, `this` here is a valid
+ *     [android.content.Context] for every call below.
  */
 class MaterialYouPrefsApplication : PyApplication() {
 
@@ -82,7 +93,7 @@ class MaterialYouPrefsApplication : PyApplication() {
         appScope.launch {
             val repo = AppState.commandRepository ?: return@launch
             try {
-                val count = repo.seedFromAssets(this@MaterialYouPrefsApplication)
+                val count = repo.seedFromAssets(this)
                 AppState.seedRowCount = count
                 Log.i(TAG, "seedFromAssets inserted $count commands")
             } catch (t: Throwable) {
