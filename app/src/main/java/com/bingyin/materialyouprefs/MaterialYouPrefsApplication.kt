@@ -29,18 +29,6 @@ import kotlinx.coroutines.launch
  *     for us. Without it, the first avbtool command crashes with
  *     `RuntimeException: Cannot use GenericPlatform on Android` because
  *     the default platform on Android is the JVM GenericPlatform.
- *   - The Chaquopy PyApplication source (verified against 15.0.1):
- *     ```java
- *     package com.chaquo.python.android;
- *     public class PyApplication extends Application {
- *         @Override public void onCreate() {
- *             super.onCreate();
- *             Python.start(new AndroidPlatform(this));
- *         }
- *     }
- *     ```
- *   - Because it extends `android.app.Application`, `this` here is a valid
- *     [android.content.Context] for every call below.
  */
 class MaterialYouPrefsApplication : PyApplication() {
 
@@ -59,6 +47,14 @@ class MaterialYouPrefsApplication : PyApplication() {
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
+        // Grab a stable reference to `this` before any lambda/launch below.
+        // Inside `appScope.launch { ... }` the implicit `this` is the
+        // CoroutineScope, not this Application -- passing bare `this`
+        // used to fail the compile with
+        // "Argument type mismatch: actual type is CoroutineScope, but
+        //  android.content.Context was expected."
+        val app = this
+
         // PyApplication.onCreate() initialises Python with AndroidPlatform(this)
         // before returning to us. Any failure there is fatal for the Chaquopy
         // runner -- we wrap it in a try and fall back to Noop so the rest of
@@ -71,7 +67,7 @@ class MaterialYouPrefsApplication : PyApplication() {
         }
 
         val db = try {
-            AvbDatabase.getInstance(this)
+            AvbDatabase.getInstance(app)
         } catch (t: Throwable) {
             Log.e(TAG, "AvbDatabase.getInstance failed", t)
             AppState.seedFailure = t
@@ -80,7 +76,7 @@ class MaterialYouPrefsApplication : PyApplication() {
 
         val runner = if (USE_CHAQUOPY_RUNNER) {
             try {
-                AvbToolRunnerImpl(this)
+                AvbToolRunnerImpl(app)
             } catch (t: Throwable) {
                 Log.w(TAG, "AvbToolRunnerImpl init failed, falling back to Noop", t)
                 NoopAvbToolRunner()
@@ -93,7 +89,7 @@ class MaterialYouPrefsApplication : PyApplication() {
         appScope.launch {
             val repo = AppState.commandRepository ?: return@launch
             try {
-                val count = repo.seedFromAssets(this)
+                val count = repo.seedFromAssets(app)
                 AppState.seedRowCount = count
                 Log.i(TAG, "seedFromAssets inserted $count commands")
             } catch (t: Throwable) {
